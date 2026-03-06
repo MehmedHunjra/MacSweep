@@ -12,10 +12,13 @@ BUNDLE  = "com.mehmed.MacSweep"
 SWIFT_FILES = [
     "MacSweepApp.swift", "ContentView.swift", "Models.swift",
     "ScanEngine.swift", "CleanEngine.swift", "SidebarView.swift",
-    "DashboardView.swift", "SmartScanView.swift", "LargeFilesView.swift",
-    "AppLeftoversView.swift", "BrowserCleanerView.swift", "CleanResultSheet.swift",
-    "MenuBarView.swift", "SystemJunkView.swift", "MaintenanceView.swift",
-    "PrivacyView.swift", "SpaceLensView.swift", "SettingsView.swift",
+    "DashboardView.swift", "SmartScanView.swift", "DuplicateFinderView.swift",
+    "MemoryOptimizerView.swift", "OnboardingView.swift", "LegalView.swift",
+    "LargeFilesView.swift", "AppLeftoversView.swift", "BrowserCleanerView.swift",
+    "CleanResultSheet.swift", "MenuBarView.swift", "SystemJunkView.swift",
+    "MaintenanceView.swift", "PrivacyView.swift", "SpaceLensView.swift",
+    "PerformanceManagerView.swift", "ApplicationsManagerView.swift",
+    "ProtectionManagerView.swift", "SettingsView.swift",
     "DevCleanerView.swift",
 ]
 
@@ -181,6 +184,8 @@ INFO_PLIST = f"""<?xml version="1.0" encoding="UTF-8"?>
     <key>LSUIElement</key><false/>
     <key>NSFullDiskAccessUsageDescription</key>
     <string>MacSweep needs full disk access to scan and clean junk files on your Mac.</string>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>MacSweep uses location permission to read the current Wi-Fi network name for live network status.</string>
     <key>NSHumanReadableCopyright</key><string>Copyright 2026 Mehmed. Open Source - Free for all.</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundleIconName</key><string>AppIcon</string>

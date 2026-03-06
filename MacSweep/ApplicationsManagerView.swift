@@ -69,9 +69,8 @@ struct ApplicationsManagerView: View {
         case .unusedApps:
             let thirtyDaysAgo = Date().addingTimeInterval(-30 * 24 * 60 * 60)
             apps = apps.filter { app in
-                guard let vals = try? URL(fileURLWithPath: app.path).resourceValues(forKeys: [.contentAccessDateKey]),
-                      let date = vals.contentAccessDate else { return false }
-                return date < thirtyDaysAgo
+                guard let lastUsed = app.lastUsed else { return false }
+                return lastUsed < thirtyDaysAgo
             }
         case .withLeftovers:
             apps = apps.filter { !$0.leftovers.isEmpty }
@@ -307,6 +306,7 @@ struct ApplicationsManagerView: View {
                         AppListRow(
                             app: app,
                             isSelected: selectedAppId == app.id,
+                            showLastUsed: activeFilter == .unusedApps,
                             onTap: {
                                 selectedAppId = app.id
                                 activeDetailTab = .leftovers
@@ -913,6 +913,7 @@ struct ApplicationsManagerView: View {
 struct AppListRow: View {
     let app: InstalledApp
     let isSelected: Bool
+    let showLastUsed: Bool
     let onTap: () -> Void
     @State private var hovered = false
 
@@ -935,9 +936,16 @@ struct AppListRow: View {
                         .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
                         .foregroundColor(isSelected ? .primary : .secondary)
                         .lineLimit(1)
-                    Text(app.sizeFormatted)
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
+                    if showLastUsed {
+                        Text("Last used: \(app.lastUsedFormatted)")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                    } else {
+                        Text(app.sizeFormatted)
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
                 }
                 Spacer()
                 if !app.leftovers.isEmpty {

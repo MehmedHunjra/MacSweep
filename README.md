@@ -127,6 +127,25 @@ bash build-dmg.sh
 This builds the app and produces `dist/MacSweep-Installer-v3.3.dmg`.
 Open the DMG, drag MacSweep to Applications, and launch.
 
+### macOS Gatekeeper Warning — "App is damaged"
+
+MacSweep is open source and not yet notarized with Apple. If you see
+**"MacSweep is damaged and can't be opened"**, use one of these fixes:
+
+**Fix 1 — Remove quarantine (recommended):**
+
+```bash
+xattr -d com.apple.quarantine ~/Downloads/MacSweep-Installer-v3.3.dmg
+```
+
+Then open the DMG again normally.
+
+**Fix 2 — Right-click to open:**
+Right-click the DMG → **Open** → click **Open** on the warning.
+
+**Fix 3 — System Settings:**
+System Settings → Privacy & Security → scroll down → click **Open Anyway**.
+
 ### Option 2 — Manual Xcode Build
 
 ```bash

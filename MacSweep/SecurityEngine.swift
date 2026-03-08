@@ -5,8 +5,8 @@ import UserNotifications
 
 // MARK: - Notification Manager
 
-final class NotificationManager {
-    static let shared = NotificationManager()
+final class MSNotificationManager {
+    static let shared = MSNotificationManager()
     private init() {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
     }
@@ -363,9 +363,9 @@ class MalwareScanEngine: ObservableObject {
                 self.isScanning = false
                 self.progress = 1.0
                 self.lastScanDate = Date()
-                NotificationManager.shared.playSound("Submarine")
+                MSNotificationManager.shared.playSound("Submarine")
                 if !self.threats.isEmpty {
-                    NotificationManager.shared.notifyThreatDetected(threatCount: self.threats.count)
+                    MSNotificationManager.shared.notifyThreatDetected(threatCount: self.threats.count)
                 }
             }
         }
@@ -613,7 +613,7 @@ class AdwareCleanEngine: ObservableObject {
                 self.items = finalFound
                 self.isScanning = false
                 self.progress = 1.0
-                NotificationManager.shared.playSound("Hero")
+                MSNotificationManager.shared.playSound("Hero")
             }
         }
     }
@@ -2057,8 +2057,8 @@ final class IntegrityMonitorEngine: ObservableObject {
         
         let newHighRiskCount = highRiskCount
         if newHighRiskCount > oldHighRiskCount {
-            NotificationManager.shared.notifyIntegrityAlert(description: "New high-risk system modification detected.")
-            NotificationManager.shared.playSound("Basso")
+            MSNotificationManager.shared.notifyIntegrityAlert(description: "New high-risk system modification detected.")
+            MSNotificationManager.shared.playSound("Basso")
         }
     }
 

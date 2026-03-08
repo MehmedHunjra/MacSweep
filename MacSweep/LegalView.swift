@@ -22,7 +22,7 @@ struct LegalSheet: View {
             HStack {
                 Image(systemName: type == .privacy ? "hand.raised.fill" : "doc.text.fill")
                     .font(.system(size: 18, weight: .semibold))
-                    .foregroundColor(type == .privacy ? Color(hex: "667EEA") : Color(hex: "11998E"))
+                    .foregroundColor(type == .privacy ? DS.brandTeal : DS.brandGreen)
                 Text(type.rawValue)
                     .font(.system(size: 20, weight: .bold, design: .rounded))
                 Spacer()
@@ -192,8 +192,8 @@ struct LegalSheet: View {
         legalSection("6. File Deletion Disclaimer", """
         When you use MacSweep to clean or remove files:
         
-        • Files are permanently deleted — they may NOT be recoverable.
-        • MacSweep does not move files to Trash — selected items are removed directly.
+        • MacSweep attempts to move removable items to Trash first.
+        • In limited cases (permissions, system restrictions), direct deletion may still be required.
         • You should always review the file list carefully before confirming deletion.
         • If you are unsure about a file, deselect it or use "Reveal in Finder" to inspect it.
         • We recommend maintaining regular backups of your important data using Time Machine \

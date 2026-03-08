@@ -12,6 +12,14 @@ class CleanEngine: ObservableObject {
 
     private let fm = FileManager.default
 
+    private func removeItemSafely(at url: URL) throws {
+        do {
+            try fm.trashItem(at: url, resultingItemURL: nil)
+        } catch {
+            try fm.removeItem(at: url)
+        }
+    }
+
     func clean(items: [ScanItem]) async {
         let toDelete = items.filter(\.isSelected)
         guard !toDelete.isEmpty else { return }
@@ -33,18 +41,8 @@ class CleanEngine: ObservableObject {
             }
 
             do {
-                let url   = URL(fileURLWithPath: item.path)
-                let isDir = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
-
-                if isDir {
-                    if let contents = try? fm.contentsOfDirectory(atPath: item.path) {
-                        for name in contents {
-                            try? fm.removeItem(atPath: "\(item.path)/\(name)")
-                        }
-                    }
-                } else {
-                    try fm.removeItem(at: url)
-                }
+                let url = URL(fileURLWithPath: item.path)
+                try removeItemSafely(at: url)
                 cleanedSize += item.size
             } catch {
                 errors.append("\(item.name): \(error.localizedDescription)")

@@ -10,6 +10,7 @@ import CoreLocation
 struct SettingsView: View {
     @ObservedObject var scanEngine: ScanEngine
     @ObservedObject var settings: AppSettings
+    @ObservedObject var updater: AppUpdateEngine
     @State private var selectedSection: SettingsSection = .general
     @State private var notificationAuthStatus: UNAuthorizationStatus = .notDetermined
     @State private var showPrivacyPolicy = false
@@ -22,39 +23,101 @@ struct SettingsView: View {
     }
 
     enum SettingsSection: String, CaseIterable {
-        case general   = "General"
-        case menuBar   = "Menu Bar"
-        case scanning  = "Scanning"
-        case history   = "History"
-        case about     = "About"
+        case general    = "General"
+        case menuBar    = "Menu Bar"
+        case scanning   = "Scanning"
+        case tools         = "Tools"
+        case notifications = "Notifications"
+        case antivirus     = "Antivirus"
+        case integrity     = "Integrity"
+        case history       = "History"
+        case about         = "About"
 
         var icon: String {
             switch self {
-            case .general:  return "gearshape.fill"
-            case .menuBar:  return "menubar.rectangle"
-            case .scanning: return "sparkles.rectangle.stack"
-            case .history:  return "clock.arrow.circlepath"
-            case .about:    return "info.circle.fill"
+            case .general:   return "gearshape.fill"
+            case .menuBar:   return "menubar.rectangle"
+            case .scanning:  return "sparkles.rectangle.stack"
+            case .tools:         return "wrench.and.screwdriver.fill"
+            case .notifications: return "bell.badge.fill"
+            case .antivirus:     return "shield.fill"
+            case .integrity:     return "checkmark.shield"
+            case .history:       return "clock.arrow.circlepath"
+            case .about:         return "info.circle.fill"
             }
         }
         var color: Color {
             switch self {
-            case .general:  return Color(hex: "636e72")
-            case .menuBar:  return Color(hex: "667EEA")
-            case .scanning: return Color(hex: "11998E")
-            case .history:  return Color(hex: "F5A623")
-            case .about:    return Color(hex: "764BA2")
+            case .general:   return DS.textSecondary
+            case .menuBar:   return DS.brandTeal
+            case .scanning:  return DS.brandGreen
+            case .tools:         return DS.warning
+            case .notifications: return DS.warning
+            case .antivirus:     return DS.danger
+            case .integrity:     return Color(hex: "169677")
+            case .history:       return Color(hex: "8B5CF6")
+            case .about:         return DS.brandTeal
             }
         }
     }
 
+    @EnvironmentObject var navManager: NavigationManager
+
+    // MARK: - Navigation Header
+    private var navHeader: some View {
+        HStack(spacing: 16) {
+            HStack(spacing: 8) {
+                Button {
+                    if !navManager.goBackInCurrentSection() {
+                        navManager.goBack()
+                    }
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor((navManager.canGoBackInCurrentSection || navManager.canGoBack) ? DS.textSecondary : DS.textMuted.opacity(0.5))
+                        .frame(width: 32, height: 32)
+                        .background((navManager.canGoBackInCurrentSection || navManager.canGoBack) ? DS.bgElevated : DS.bgElevated.opacity(0.5))
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .disabled(!(navManager.canGoBackInCurrentSection || navManager.canGoBack))
+
+                Button {
+                    if !navManager.goForwardInCurrentSection() {
+                        navManager.goForward()
+                    }
+                } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor((navManager.canGoForwardInCurrentSection || navManager.canGoForward) ? DS.textSecondary : DS.textMuted.opacity(0.5))
+                        .frame(width: 32, height: 32)
+                        .background((navManager.canGoForwardInCurrentSection || navManager.canGoForward) ? DS.bgElevated : DS.bgElevated.opacity(0.5))
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .disabled(!(navManager.canGoForwardInCurrentSection || navManager.canGoForward))
+            }
+            
+            Text("Settings")
+                .font(.system(size: 18, weight: .bold, design: .rounded))
+                .foregroundColor(DS.textPrimary)
+            
+            Spacer()
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 16)
+    }
+
     var body: some View {
-        HStack(spacing: 0) {
+        VStack(spacing: 0) {
+            navHeader
+            
+            HStack(spacing: 0) {
             // Settings sidebar
             VStack(alignment: .leading, spacing: 2) {
                 Text("SETTINGS")
                     .font(.system(size: 10, weight: .bold))
-                    .foregroundColor(.secondary.opacity(0.6))
+                    .foregroundColor(DS.textMuted)
                     .tracking(1.2)
                     .padding(.leading, 12)
                     .padding(.top, 20)
@@ -62,7 +125,9 @@ struct SettingsView: View {
 
                 ForEach(SettingsSection.allCases, id: \.self) { sec in
                     Button {
-                        withAnimation(.easeInOut(duration: 0.15)) { selectedSection = sec }
+                        withAnimation(.easeInOut(duration: 0.15)) {
+                            selectedSection = sec
+                        }
                     } label: {
                         HStack(spacing: 10) {
                             ZStack {
@@ -75,14 +140,14 @@ struct SettingsView: View {
                             }
                             Text(sec.rawValue)
                                 .font(.system(size: 13, weight: selectedSection == sec ? .semibold : .regular))
-                                .foregroundColor(selectedSection == sec ? .primary : .secondary)
+                                .foregroundColor(selectedSection == sec ? DS.textPrimary : DS.textSecondary)
                             Spacer()
                         }
                         .padding(.horizontal, 12)
                         .padding(.vertical, 5)
                         .background(
                             RoundedRectangle(cornerRadius: 7)
-                                .fill(selectedSection == sec ? AppTheme.accent.opacity(0.08) : Color.clear)
+                                .fill(selectedSection == sec ? sec.color.opacity(0.12) : Color.clear)
                         )
                         .contentShape(Rectangle())
                     }
@@ -91,19 +156,23 @@ struct SettingsView: View {
                 Spacer()
             }
             .frame(width: 180)
-            .background(VisualEffectView(material: .sidebar, blendingMode: .behindWindow))
+            .background(DS.bgPanel)
 
-            Rectangle().fill(Color.gray.opacity(0.15)).frame(width: 1)
+            Rectangle().fill(DS.borderSubtle).frame(width: 1)
 
             // Settings content
             ScrollView(showsIndicators: false) {
                 Group {
                     switch selectedSection {
-                    case .general:  generalSettings
-                    case .menuBar:  menuBarSettings
-                    case .scanning: scanningSettings
-                    case .history:  historySettings
-                    case .about:    aboutView
+                    case .general:   generalSettings
+                    case .menuBar:   menuBarSettings
+                    case .scanning:  scanningSettings
+                    case .tools:         toolsSettings
+                    case .notifications: notificationSettings
+                    case .antivirus:     antivirusSettings
+                    case .integrity:     integritySettings
+                    case .history:       historySettings
+                    case .about:         aboutView
                     }
                 }
                 .padding(28)
@@ -111,15 +180,39 @@ struct SettingsView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .onAppear {
-            if let restored = SettingsSection(rawValue: settings.settingsSectionRaw) {
+            // Priority: if navigation passed a concrete Settings sub-section, open that one.
+            if navManager.currentState.section == .settings,
+               let sub = navManager.currentState.subState,
+               let fromNav = SettingsSection(rawValue: sub) {
+                selectedSection = fromNav
+            } else if let restored = SettingsSection(rawValue: settings.settingsSectionRaw) {
                 selectedSection = restored
+            }
+            // Ensure first visit is in history if not already.
+            if navManager.currentState.section != .settings || navManager.currentState.subState == nil {
+                navManager.navigate(to: .settings, subState: selectedSection.rawValue)
             }
             refreshPermissionStatuses()
             registerLoginItem(enabled: settings.launchAtLogin)
+            updater.configure(settings: settings)
+            NotificationManager.shared.configure(settings: settings)
+            Task { await updater.evaluateAutoCheckIfNeeded() }
+        }
+        .onChange(of: navManager.currentState) { _, newState in
+            if newState.section == .settings, let sub = newState.subState, let section = SettingsSection(rawValue: sub) {
+                if selectedSection != section {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        selectedSection = section
+                    }
+                }
+            }
         }
         .onChange(of: selectedSection) { _, newValue in
             if settings.settingsSectionRaw != newValue.rawValue {
                 settings.settingsSectionRaw = newValue.rawValue
+            }
+            if navManager.currentState.section != .settings || navManager.currentState.subState != newValue.rawValue {
+                navManager.navigate(to: .settings, subState: newValue.rawValue)
             }
         }
         .onChange(of: settings.settingsSectionRaw) { _, newRaw in
@@ -127,18 +220,25 @@ struct SettingsView: View {
                 selectedSection = section
             }
         }
+        .onChange(of: settings.updateAutoCheckEnabled) { _, _ in
+            Task { await updater.evaluateAutoCheckIfNeeded() }
+        }
+        .onChange(of: settings.updateCheckIntervalHours) { _, _ in
+            Task { await updater.evaluateAutoCheckIfNeeded() }
+        }
+        }
     }
 
     // MARK: - General Settings
     var generalSettings: some View {
         VStack(alignment: .leading, spacing: 24) {
-            settingsHeader(icon: "gearshape.fill", title: "General", color: Color(hex: "636e72"))
+            settingsHeader(icon: "gearshape.fill", title: "General", color: DS.textSecondary)
 
             SettingsCard {
                 VStack(spacing: 0) {
                     SettingsRow(
                         icon: "power",
-                        iconColor: Color(hex: "11998E"),
+                        iconColor: DS.brandGreen,
                         title: "Launch at Login",
                         subtitle: "MacSweep starts automatically when you log in"
                     ) {
@@ -153,9 +253,9 @@ struct SettingsView: View {
 
                     SettingsRow(
                         icon: "menubar.rectangle",
-                        iconColor: Color(hex: "667EEA"),
+                        iconColor: DS.brandTeal,
                         title: "Launch as Menu Bar Only",
-                        subtitle: "At login, start hidden in menu bar (default)"
+                        subtitle: "Only menu bar launches at login (recommended)"
                     ) {
                         Toggle("", isOn: $settings.launchAtLoginMenuBarOnly)
                             .labelsHidden()
@@ -167,7 +267,7 @@ struct SettingsView: View {
 
                     SettingsRow(
                         icon: "dock.rectangle",
-                        iconColor: Color(hex: "4776E6"),
+                        iconColor: DS.brandTeal,
                         title: "Show in Dock",
                         subtitle: "Display MacSweep icon in the Dock"
                     ) {
@@ -179,7 +279,7 @@ struct SettingsView: View {
 
                     SettingsRow(
                         icon: "bell.fill",
-                        iconColor: Color(hex: "F5A623"),
+                        iconColor: DS.warning,
                         title: "Notifications",
                         subtitle: "Show alerts when scans complete"
                     ) {
@@ -191,7 +291,7 @@ struct SettingsView: View {
 
                     SettingsRow(
                         icon: "arrow.clockwise",
-                        iconColor: AppTheme.accent,
+                        iconColor: DS.brandGreen,
                         title: "Refresh Interval",
                         subtitle: "How often to update system stats"
                     ) {
@@ -211,6 +311,149 @@ struct SettingsView: View {
             }
 
             VStack(alignment: .leading, spacing: 10) {
+                Text("APP UPDATES")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(.secondary.opacity(0.6))
+                    .tracking(1.2)
+
+                SettingsCard {
+                    VStack(spacing: 0) {
+                        SettingsRow(
+                            icon: "arrow.triangle.2.circlepath",
+                            iconColor: DS.brandTeal,
+                            title: "Automatic Update Checks",
+                            subtitle: "Check GitHub releases in the background"
+                        ) {
+                            Toggle("", isOn: $settings.updateAutoCheckEnabled)
+                                .labelsHidden()
+                        }
+
+                        Divider().padding(.leading, 44)
+
+                        SettingsRow(
+                            icon: "clock.badge.checkmark",
+                            iconColor: DS.brandGreen,
+                            title: "Check Frequency",
+                            subtitle: "How often to check for new versions"
+                        ) {
+                            Picker("", selection: $settings.updateCheckIntervalHours) {
+                                Text("Every 6h").tag(6.0)
+                                Text("Every 12h").tag(12.0)
+                                Text("Every 24h").tag(24.0)
+                                Text("Every 48h").tag(48.0)
+                                Text("Every 7d").tag(168.0)
+                            }
+                            .labelsHidden()
+                            .frame(width: 96)
+                            .disabled(!settings.updateAutoCheckEnabled)
+                        }
+                        .opacity(settings.updateAutoCheckEnabled ? 1.0 : 0.45)
+
+                        Divider().padding(.leading, 44)
+
+                        HStack(alignment: .top, spacing: 12) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 7)
+                                    .fill(DS.warning.opacity(0.15))
+                                    .frame(width: 28, height: 28)
+                                Image(systemName: "arrow.down.circle.fill")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundColor(DS.warning)
+                            }
+
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(updater.statusMessage)
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundColor(updater.isUpdateAvailable ? DS.warning : .primary)
+
+                                Text("Installed: v\(updater.currentVersion)  •  Latest: v\(updater.latestVersion ?? updater.currentVersion)")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+
+                                Text("Last checked: \(formatPolicyDate(settings.updateLastCheckAt))  •  Next: \(nextUpdateCheckText)")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.secondary)
+
+                                if let error = updater.lastErrorMessage, !error.isEmpty {
+                                    Text(error)
+                                        .font(.system(size: 10))
+                                        .foregroundColor(DS.danger)
+                                }
+                            }
+
+                            Spacer()
+
+                            VStack(alignment: .trailing, spacing: 8) {
+                                Button {
+                                    Task { await updater.checkForUpdates(manual: true) }
+                                } label: {
+                                    HStack(spacing: 6) {
+                                        if updater.isChecking {
+                                            ProgressView()
+                                                .controlSize(.small)
+                                        }
+                                        Text(updater.isChecking ? "Checking..." : "Check Now")
+                                            .font(.system(size: 11, weight: .bold))
+                                    }
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 6)
+                                            .fill(DS.brandGreen)
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(updater.isChecking)
+
+                                Button(updater.isUpdateAvailable ? "Download Update" : "View Releases") {
+                                    updater.openReleasePage()
+                                }
+                                .buttonStyle(.plain)
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundColor(DS.brandTeal)
+                            }
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                    }
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text("SELECTION & INTERACTION")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(.secondary.opacity(0.6))
+                    .tracking(1.2)
+
+                SettingsCard {
+                    VStack(spacing: 0) {
+                        SettingsRow(
+                            icon: "checkmark.circle",
+                            iconColor: DS.brandTeal,
+                            title: "Always Show Checkboxes",
+                            subtitle: "Display selection circles even when not hovered"
+                        ) {
+                            Toggle("", isOn: $settings.selectionAlwaysShowCheckboxes)
+                                .labelsHidden()
+                        }
+
+                        Divider().padding(.leading, 44)
+
+                        SettingsRow(
+                            icon: "sparkles",
+                            iconColor: DS.warning,
+                            title: "Auto-Select High Risk",
+                            subtitle: "Automatically check dangerous items after scanning"
+                        ) {
+                            Toggle("", isOn: $settings.selectionAutoSelectHighRisk)
+                                .labelsHidden()
+                        }
+                    }
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
                 Text("PERMISSIONS & SHORTCUTS")
                     .font(.system(size: 10, weight: .bold))
                     .foregroundColor(.secondary.opacity(0.6))
@@ -220,7 +463,7 @@ struct SettingsView: View {
                     VStack(spacing: 0) {
                         PermissionShortcutRow(
                             icon: "figure.wave",
-                            iconColor: Color(hex: "667EEA"),
+                            iconColor: DS.brandTeal,
                             title: "Accessibility",
                             subtitle: "Needed for app control actions",
                             statusText: accessibilityStatusText
@@ -232,7 +475,7 @@ struct SettingsView: View {
 
                         PermissionShortcutRow(
                             icon: "externaldrive.fill.badge.checkmark",
-                            iconColor: Color(hex: "11998E"),
+                            iconColor: DS.brandGreen,
                             title: "Full Disk Access",
                             subtitle: "Needed for deep scanning and cleanup",
                             statusText: "Open macOS setting"
@@ -244,7 +487,7 @@ struct SettingsView: View {
 
                         PermissionShortcutRow(
                             icon: "rectangle.on.rectangle",
-                            iconColor: Color(hex: "8E54E9"),
+                            iconColor: Color(hex: "8B5CF6"),
                             title: "Screen Recording",
                             subtitle: "Needed for advanced overlay/screen tools",
                             statusText: "Open macOS setting"
@@ -256,7 +499,7 @@ struct SettingsView: View {
 
                         PermissionShortcutRow(
                             icon: "gearshape.2.fill",
-                            iconColor: Color(hex: "F857A6"),
+                            iconColor: DS.danger,
                             title: "Automation",
                             subtitle: "Allow controlled actions between apps",
                             statusText: "Open macOS setting"
@@ -268,7 +511,7 @@ struct SettingsView: View {
 
                         PermissionShortcutRow(
                             icon: "location.fill",
-                            iconColor: Color(hex: "38EF7D"),
+                            iconColor: DS.success,
                             title: "Location Services",
                             subtitle: "Used for accurate Wi-Fi network details",
                             statusText: locationStatusText
@@ -280,7 +523,7 @@ struct SettingsView: View {
 
                         PermissionShortcutRow(
                             icon: "bell.badge.fill",
-                            iconColor: Color(hex: "F5A623"),
+                            iconColor: DS.warning,
                             title: "Notifications Permission",
                             subtitle: "Allow scan alerts and task updates",
                             statusText: notificationStatusText
@@ -292,7 +535,7 @@ struct SettingsView: View {
 
                         PermissionShortcutRow(
                             icon: "keyboard",
-                            iconColor: AppTheme.accent,
+                            iconColor: DS.brandGreen,
                             title: "Keyboard Shortcuts",
                             subtitle: "Open macOS shortcuts settings",
                             statusText: "Open macOS setting"
@@ -312,13 +555,13 @@ struct SettingsView: View {
     // MARK: - Menu Bar Settings
     var menuBarSettings: some View {
         VStack(alignment: .leading, spacing: 24) {
-            settingsHeader(icon: "menubar.rectangle", title: "Menu Bar", color: Color(hex: "667EEA"))
+            settingsHeader(icon: "menubar.rectangle", title: "Menu Bar", color: DS.brandTeal)
 
             SettingsCard {
                 VStack(spacing: 0) {
                     SettingsRow(
                         icon: "cpu",
-                        iconColor: Color(hex: "4776E6"),
+                        iconColor: DS.brandTeal,
                         title: "Show CPU Usage",
                         subtitle: "Display CPU load percentage in menu bar"
                     ) {
@@ -329,7 +572,7 @@ struct SettingsView: View {
 
                     SettingsRow(
                         icon: "memorychip",
-                        iconColor: Color(hex: "38EF7D"),
+                        iconColor: DS.success,
                         title: "Show RAM Usage",
                         subtitle: "Display memory usage in menu bar"
                     ) {
@@ -340,7 +583,7 @@ struct SettingsView: View {
 
                     SettingsRow(
                         icon: "internaldrive.fill",
-                        iconColor: AppTheme.accent,
+                        iconColor: DS.brandGreen,
                         title: "Show Disk Available",
                         subtitle: "Display available disk space in menu bar"
                     ) {
@@ -351,7 +594,7 @@ struct SettingsView: View {
 
                     SettingsRow(
                         icon: "wifi",
-                        iconColor: Color(hex: "53C7FF"),
+                        iconColor: DS.brandTeal,
                         title: "Show Network Speed",
                         subtitle: "Display download/upload speed in menu bar"
                     ) {
@@ -393,7 +636,7 @@ struct SettingsView: View {
                 .padding(.vertical, 6)
                 .background(
                     RoundedRectangle(cornerRadius: 6)
-                        .fill(Color(NSColor.controlBackgroundColor))
+                        .fill(DS.bgElevated)
                         .shadow(radius: 2)
                 )
             }
@@ -403,13 +646,13 @@ struct SettingsView: View {
     // MARK: - Scanning Settings
     var scanningSettings: some View {
         VStack(alignment: .leading, spacing: 24) {
-            settingsHeader(icon: "sparkles.rectangle.stack", title: "Scanning", color: Color(hex: "11998E"))
+            settingsHeader(icon: "sparkles.rectangle.stack", title: "Scanning", color: DS.brandGreen)
 
             SettingsCard {
                 VStack(spacing: 0) {
                     SettingsRow(
                         icon: "checklist",
-                        iconColor: Color(hex: "11998E"),
+                        iconColor: DS.brandGreen,
                         title: "User Caches",
                         subtitle: "Scan application caches"
                     ) {
@@ -421,7 +664,7 @@ struct SettingsView: View {
 
                     SettingsRow(
                         icon: "doc.text.fill",
-                        iconColor: Color(hex: "F5A623"),
+                        iconColor: DS.warning,
                         title: "Log Files",
                         subtitle: "Scan application and system logs"
                     ) {
@@ -433,7 +676,7 @@ struct SettingsView: View {
 
                     SettingsRow(
                         icon: "globe",
-                        iconColor: Color(hex: "56AB2F"),
+                        iconColor: DS.success,
                         title: "Browser Caches",
                         subtitle: "Scan browser caches and web data"
                     ) {
@@ -445,7 +688,7 @@ struct SettingsView: View {
 
                     SettingsRow(
                         icon: "hammer.fill",
-                        iconColor: Color(hex: "E94560"),
+                        iconColor: DS.danger,
                         title: "Development Junk",
                         subtitle: "Scan Xcode/npm/gradle/cocoapods artifacts"
                     ) {
@@ -457,7 +700,7 @@ struct SettingsView: View {
 
                     SettingsRow(
                         icon: "clock.arrow.circlepath",
-                        iconColor: Color(hex: "9B9B9B"),
+                        iconColor: DS.textMuted,
                         title: "Temporary Files",
                         subtitle: "Scan temporary files and trash data"
                     ) {
@@ -469,7 +712,7 @@ struct SettingsView: View {
 
                     SettingsRow(
                         icon: "envelope.badge.fill",
-                        iconColor: Color(hex: "4A90D9"),
+                        iconColor: DS.brandTeal,
                         title: "Mail Attachments",
                         subtitle: "Scan cached Mail downloads"
                     ) {
@@ -480,8 +723,20 @@ struct SettingsView: View {
                     Divider().padding(.leading, 44)
 
                     SettingsRow(
+                        icon: "photo.on.rectangle.angled",
+                        iconColor: Color(hex: "EC4899"),
+                        title: "Photo Junk",
+                        subtitle: "Scan Photos app cache and analysis junk"
+                    ) {
+                        Toggle("", isOn: $settings.scanIncludePhotoJunk)
+                            .labelsHidden()
+                    }
+
+                    Divider().padding(.leading, 44)
+
+                    SettingsRow(
                         icon: "trash.fill",
-                        iconColor: Color(hex: "ED4264"),
+                        iconColor: DS.danger,
                         title: "App Leftovers",
                         subtitle: "Scan leftover data from removed apps"
                     ) {
@@ -493,7 +748,7 @@ struct SettingsView: View {
 
                     SettingsRow(
                         icon: "arrow.up.doc.fill",
-                        iconColor: Color(hex: "F857A6"),
+                        iconColor: DS.danger,
                         title: "Large Files",
                         subtitle: "Scan large files in user folders"
                     ) {
@@ -505,7 +760,7 @@ struct SettingsView: View {
 
                     SettingsRow(
                         icon: "arrow.up.doc.fill",
-                        iconColor: Color(hex: "F857A6"),
+                        iconColor: DS.danger,
                         title: "Large File Threshold",
                         subtitle: "Files larger than this are flagged"
                     ) {
@@ -515,6 +770,125 @@ struct SettingsView: View {
                             Text("\(Int(settings.largeFileThresholdMB)) MB")
                                 .font(.system(size: 12, weight: .medium, design: .rounded))
                                 .frame(width: 55, alignment: .trailing)
+                        }
+                    }
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text("AUTOMATION")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(.secondary.opacity(0.6))
+                    .tracking(1.2)
+
+                SettingsCard {
+                    VStack(spacing: 0) {
+                        SettingsRow(
+                            icon: "calendar.badge.clock",
+                            iconColor: DS.brandTeal,
+                            title: "Scheduled Auto Scan",
+                            subtitle: "Run Smart Scan automatically in the background"
+                        ) {
+                            Toggle("", isOn: $settings.autoScanEnabled)
+                                .labelsHidden()
+                        }
+
+                        Divider().padding(.leading, 44)
+
+                        SettingsRow(
+                            icon: "timer",
+                            iconColor: DS.brandGreen,
+                            title: "Scan Interval",
+                            subtitle: "How often scheduled scan should run"
+                        ) {
+                            Picker("", selection: $settings.autoScanIntervalHours) {
+                                Text("1h").tag(1.0)
+                                Text("3h").tag(3.0)
+                                Text("6h").tag(6.0)
+                                Text("12h").tag(12.0)
+                                Text("24h").tag(24.0)
+                                Text("3d").tag(72.0)
+                                Text("7d").tag(168.0)
+                            }
+                            .labelsHidden()
+                            .frame(width: 80)
+                            .disabled(!settings.autoScanEnabled)
+                        }
+                        .opacity(settings.autoScanEnabled ? 1.0 : 0.45)
+
+                        Divider().padding(.leading, 44)
+
+                        SettingsRow(
+                            icon: "sparkles",
+                            iconColor: DS.warning,
+                            title: "Auto Clean After Scan",
+                            subtitle: "Clean selected safe categories after scheduled scan"
+                        ) {
+                            Toggle("", isOn: $settings.autoCleanEnabled)
+                                .labelsHidden()
+                                .disabled(!settings.autoScanEnabled)
+                        }
+                        .opacity(settings.autoScanEnabled ? 1.0 : 0.45)
+
+                        Divider().padding(.leading, 44)
+
+                        SettingsRow(
+                            icon: "slider.horizontal.3",
+                            iconColor: DS.danger,
+                            title: "Auto Clean Minimum",
+                            subtitle: "Only clean when selected items reach this size"
+                        ) {
+                            HStack(spacing: 6) {
+                                Slider(value: $settings.autoCleanMinimumMB, in: 50...2000, step: 50)
+                                    .frame(width: 120)
+                                    .disabled(!(settings.autoScanEnabled && settings.autoCleanEnabled))
+                                Text("\(Int(settings.autoCleanMinimumMB)) MB")
+                                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                                    .frame(width: 58, alignment: .trailing)
+                            }
+                        }
+                        .opacity((settings.autoScanEnabled && settings.autoCleanEnabled) ? 1.0 : 0.45)
+                    }
+                }
+
+                SettingsCard {
+                    VStack(spacing: 0) {
+                        SettingsRow(
+                            icon: "clock.badge.checkmark",
+                            iconColor: DS.brandGreen,
+                            title: "Last Scheduled Run",
+                            subtitle: "Most recent background policy execution"
+                        ) {
+                            Text(formatPolicyDate(settings.autoLastRunAt))
+                                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                .foregroundColor(.secondary)
+                        }
+
+                        Divider().padding(.leading, 44)
+
+                        SettingsRow(
+                            icon: "clock.badge",
+                            iconColor: DS.brandTeal,
+                            title: "Next Scheduled Run",
+                            subtitle: "Estimated next automatic Smart Scan"
+                        ) {
+                            Text(nextScheduledRunText)
+                                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                .foregroundColor(.secondary)
+                        }
+
+                        Divider().padding(.leading, 44)
+
+                        SettingsRow(
+                            icon: "checkmark.seal.fill",
+                            iconColor: DS.warning,
+                            title: "Policy Status",
+                            subtitle: "Latest scheduled policy state"
+                        ) {
+                            Text(settings.autoLastPolicyStatus)
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
                         }
                     }
                 }
@@ -543,7 +917,7 @@ struct SettingsView: View {
                             HStack(spacing: 12) {
                                 Image(systemName: "folder.fill")
                                     .font(.system(size: 10))
-                                    .foregroundColor(AppTheme.accent)
+                                    .foregroundColor(DS.brandGreen)
                                     .frame(width: 14)
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(loc.0)
@@ -570,25 +944,656 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - Tools Settings
+    var toolsSettings: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            settingsHeader(icon: "wrench.and.screwdriver.fill", title: "Tools", color: DS.warning)
+
+            // Browser Privacy
+            VStack(alignment: .leading, spacing: 10) {
+                Text("BROWSER PRIVACY")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(.secondary.opacity(0.6))
+                    .tracking(1.2)
+
+                SettingsCard {
+                    VStack(spacing: 0) {
+                        SettingsRow(
+                            icon: "globe.americas.fill",
+                            iconColor: Color(hex: "4285F4"),
+                            title: "Google Chrome",
+                            subtitle: "Scan Chrome caches, history, and cookies"
+                        ) {
+                            Toggle("", isOn: $settings.browserScanChrome).labelsHidden()
+                        }
+                        Divider().padding(.leading, 44)
+                        SettingsRow(
+                            icon: "safari.fill",
+                            iconColor: Color(hex: "006CFF"),
+                            title: "Safari",
+                            subtitle: "Scan Safari caches, history, and cookies"
+                        ) {
+                            Toggle("", isOn: $settings.browserScanSafari).labelsHidden()
+                        }
+                        Divider().padding(.leading, 44)
+                        SettingsRow(
+                            icon: "flame.fill",
+                            iconColor: Color(hex: "FF6611"),
+                            title: "Firefox",
+                            subtitle: "Scan Firefox caches, history, and cookies"
+                        ) {
+                            Toggle("", isOn: $settings.browserScanFirefox).labelsHidden()
+                        }
+                        Divider().padding(.leading, 44)
+                        SettingsRow(
+                            icon: "e.circle.fill",
+                            iconColor: Color(hex: "0078D4"),
+                            title: "Microsoft Edge",
+                            subtitle: "Scan Edge caches, history, and cookies"
+                        ) {
+                            Toggle("", isOn: $settings.browserScanEdge).labelsHidden()
+                        }
+                    }
+                }
+            }
+
+            // Duplicate Finder
+            VStack(alignment: .leading, spacing: 10) {
+                Text("DUPLICATE FINDER")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(.secondary.opacity(0.6))
+                    .tracking(1.2)
+
+                SettingsCard {
+                    VStack(spacing: 0) {
+                        SettingsRow(
+                            icon: "doc.on.doc.fill",
+                            iconColor: SectionTheme.theme(for: .duplicates).glow,
+                            title: "Minimum File Size",
+                            subtitle: "Only flag duplicates larger than this threshold"
+                        ) {
+                            HStack(spacing: 6) {
+                                Slider(value: $settings.duplicateMinSizeMB, in: 0.1...50, step: 0.5)
+                                    .frame(width: 110)
+                                Text(settings.duplicateMinSizeMB < 1 ? "\(Int(settings.duplicateMinSizeMB * 1000)) KB" : "\(String(format: "%.1f", settings.duplicateMinSizeMB)) MB")
+                                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                                    .frame(width: 55, alignment: .trailing)
+                            }
+                        }
+                        Divider().padding(.leading, 44)
+                        SettingsRow(
+                            icon: "eye.slash.fill",
+                            iconColor: DS.textMuted,
+                            title: "Skip Hidden Files",
+                            subtitle: "Ignore files starting with a dot (.hidden)"
+                        ) {
+                            Toggle("", isOn: $settings.duplicateSkipHiddenFiles).labelsHidden()
+                        }
+                    }
+                }
+            }
+
+            // Space Lens
+            VStack(alignment: .leading, spacing: 10) {
+                Text("SPACE LENS")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(.secondary.opacity(0.6))
+                    .tracking(1.2)
+
+                SettingsCard {
+                    VStack(spacing: 0) {
+                        SettingsRow(
+                            icon: "eye.fill",
+                            iconColor: SectionTheme.theme(for: .spaceLens).glow,
+                            title: "Show Hidden Files",
+                            subtitle: "Include hidden files and folders in the disk map"
+                        ) {
+                            Toggle("", isOn: $settings.spaceLensShowHiddenFiles).labelsHidden()
+                        }
+                    }
+                }
+            }
+
+            // Memory Optimizer
+            VStack(alignment: .leading, spacing: 10) {
+                Text("MEMORY OPTIMIZER")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(.secondary.opacity(0.6))
+                    .tracking(1.2)
+
+                SettingsCard {
+                    VStack(spacing: 0) {
+                        SettingsRow(
+                            icon: "memorychip",
+                            iconColor: SectionTheme.theme(for: .performance).glow,
+                            title: "Auto-Refresh Processes",
+                            subtitle: "Automatically refresh process list every 5 seconds"
+                        ) {
+                            Toggle("", isOn: $settings.memoryAutoRefresh).labelsHidden()
+                        }
+                    }
+                }
+            }
+
+            // Privacy & Protection
+            VStack(alignment: .leading, spacing: 10) {
+                Text("PRIVACY & PROTECTION")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(.secondary.opacity(0.6))
+                    .tracking(1.2)
+
+                SettingsCard {
+                    VStack(spacing: 0) {
+                        SettingsRow(
+                            icon: "hand.raised.fill",
+                            iconColor: DS.danger,
+                            title: "Confirm Before Deleting",
+                            subtitle: "Show confirmation dialog before removing privacy files"
+                        ) {
+                            Toggle("", isOn: $settings.privacyConfirmBeforeDelete).labelsHidden()
+                        }
+                    }
+                }
+                Text("Tip: privacy files are moved to Trash so you can recover them if needed.")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+
+    // MARK: - Notification Settings
+    var notificationSettings: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            settingsHeader(icon: "bell.badge.fill", title: "Notifications", color: DS.warning)
+
+            // Master toggle + permission status
+            VStack(alignment: .leading, spacing: 10) {
+                Text("GENERAL")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(.secondary.opacity(0.6))
+                    .tracking(1.2)
+
+                SettingsCard {
+                    VStack(spacing: 0) {
+                        SettingsRow(
+                            icon: "bell.fill",
+                            iconColor: DS.warning,
+                            title: "Enable Notifications",
+                            subtitle: "Master toggle for all MacSweep notifications"
+                        ) {
+                            Toggle("", isOn: $settings.notificationsEnabled)
+                                .labelsHidden()
+                                .tint(DS.warning)
+                        }
+
+                        Divider().padding(.leading, 44)
+
+                        SettingsRow(
+                            icon: "speaker.wave.2.fill",
+                            iconColor: DS.brandTeal,
+                            title: "Notification Sound",
+                            subtitle: "Play a sound when notifications are delivered"
+                        ) {
+                            Toggle("", isOn: $settings.notifySoundEnabled)
+                                .labelsHidden()
+                                .tint(DS.brandTeal)
+                        }
+                        .opacity(settings.notificationsEnabled ? 1.0 : 0.45)
+
+                        Divider().padding(.leading, 44)
+
+                        PermissionShortcutRow(
+                            icon: "bell.badge",
+                            iconColor: DS.brandGreen,
+                            title: "System Permission",
+                            subtitle: "Allow macOS to show notifications",
+                            statusText: notificationStatusText
+                        ) {
+                            openSystemSettings("x-apple.systempreferences:com.apple.preference.notifications")
+                        }
+                    }
+                }
+            }
+
+            // Per-category toggles
+            VStack(alignment: .leading, spacing: 10) {
+                Text("NOTIFICATION CATEGORIES")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(.secondary.opacity(0.6))
+                    .tracking(1.2)
+
+                SettingsCard {
+                    VStack(spacing: 0) {
+                        SettingsRow(
+                            icon: "sparkles.rectangle.stack",
+                            iconColor: DS.brandGreen,
+                            title: "Scan Complete",
+                            subtitle: "Notify when a scan finishes"
+                        ) {
+                            Toggle("", isOn: $settings.notifyScanComplete)
+                                .labelsHidden()
+                                .tint(DS.brandGreen)
+                        }
+
+                        Divider().padding(.leading, 44)
+
+                        SettingsRow(
+                            icon: "shield.slash.fill",
+                            iconColor: DS.danger,
+                            title: "Threat Detected",
+                            subtitle: "Alert when malware or adware is found"
+                        ) {
+                            Toggle("", isOn: $settings.notifyThreatDetected)
+                                .labelsHidden()
+                                .tint(DS.danger)
+                        }
+
+                        Divider().padding(.leading, 44)
+
+                        SettingsRow(
+                            icon: "memorychip",
+                            iconColor: Color(hex: "FF8C3A"),
+                            title: "Memory Warning",
+                            subtitle: "Warn when RAM usage is critically high"
+                        ) {
+                            Toggle("", isOn: $settings.notifyMemoryWarning)
+                                .labelsHidden()
+                                .tint(Color(hex: "FF8C3A"))
+                        }
+
+                        Divider().padding(.leading, 44)
+
+                        SettingsRow(
+                            icon: "checkmark.shield",
+                            iconColor: Color(hex: "169677"),
+                            title: "Integrity Alert",
+                            subtitle: "Alert on high-risk system integrity changes"
+                        ) {
+                            Toggle("", isOn: $settings.notifyIntegrityAlert)
+                                .labelsHidden()
+                                .tint(Color(hex: "169677"))
+                        }
+
+                        Divider().padding(.leading, 44)
+
+                        SettingsRow(
+                            icon: "arrow.down.circle.fill",
+                            iconColor: DS.brandTeal,
+                            title: "Update Available",
+                            subtitle: "Notify when a new MacSweep version is released"
+                        ) {
+                            Toggle("", isOn: $settings.notifyUpdateAvailable)
+                                .labelsHidden()
+                                .tint(DS.brandTeal)
+                        }
+
+                        Divider().padding(.leading, 44)
+
+                        SettingsRow(
+                            icon: "sparkles",
+                            iconColor: DS.success,
+                            title: "Auto-Clean Complete",
+                            subtitle: "Notify when automatic cleanup finishes"
+                        ) {
+                            Toggle("", isOn: $settings.notifyAutoClean)
+                                .labelsHidden()
+                                .tint(DS.success)
+                        }
+                    }
+                }
+                .opacity(settings.notificationsEnabled ? 1.0 : 0.45)
+            }
+
+            // Test notification button
+            VStack(alignment: .leading, spacing: 10) {
+                Text("TEST")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(.secondary.opacity(0.6))
+                    .tracking(1.2)
+
+                SettingsCard {
+                    HStack(spacing: 12) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 7)
+                                .fill(DS.brandGreen)
+                                .frame(width: 28, height: 28)
+                            Image(systemName: "bell.and.waves.left.and.right")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(.white)
+                        }
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("Send Test Notification")
+                                .font(.system(size: 13, weight: .medium))
+                            Text("Verify that macOS notifications are working")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        Button("Send") {
+                            NotificationManager.shared.sendTestNotification()
+                        }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(DS.brandGreen)
+                        )
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                }
+            }
+
+            // Info note
+            HStack(spacing: 10) {
+                Image(systemName: "info.circle.fill")
+                    .foregroundColor(DS.warning)
+                    .font(.system(size: 13))
+                Text("Notifications require macOS permission. If notifications don't appear, check System Settings → Notifications → MacSweep.")
+                    .font(.system(size: 11))
+                    .foregroundColor(DS.textMuted)
+            }
+            .padding(12)
+            .background(RoundedRectangle(cornerRadius: 8).fill(DS.bgElevated))
+        }
+    }
+
+    // MARK: - Antivirus Settings
+    var antivirusSettings: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            settingsHeader(icon: "shield.fill", title: "Antivirus", color: DS.danger)
+
+            // Protection
+            SettingsCard {
+                VStack(spacing: 0) {
+                    SettingsRow(
+                        icon: "shield.fill",
+                        iconColor: DS.success,
+                        title: "Real-Time Protection",
+                        subtitle: "Monitor file system activity and block threats as they appear"
+                    ) {
+                        Toggle("", isOn: $settings.antivirusRealtimeEnabled)
+                            .labelsHidden()
+                            .tint(DS.success)
+                    }
+
+                    Divider().padding(.leading, 44)
+
+                    SettingsRow(
+                        icon: "ant.fill",
+                        iconColor: DS.danger,
+                        title: "Deep Scan Mode",
+                        subtitle: "Scan inside archives and application bundles (slower but thorough)"
+                    ) {
+                        Toggle("", isOn: $settings.antivirusDeepScan)
+                            .labelsHidden()
+                            .tint(DS.danger)
+                    }
+
+                    Divider().padding(.leading, 44)
+
+                    SettingsRow(
+                        icon: "arrow.down.circle.fill",
+                        iconColor: DS.brandTeal,
+                        title: "Scan Downloads Folder",
+                        subtitle: "Automatically flag suspicious files in ~/Downloads"
+                    ) {
+                        Toggle("", isOn: $settings.antivirusScanDownloads)
+                            .labelsHidden()
+                            .tint(DS.brandTeal)
+                    }
+                }
+            }
+
+            // Scheduled Scans
+            SettingsCard {
+                VStack(spacing: 0) {
+                    SettingsRow(
+                        icon: "calendar.badge.clock",
+                        iconColor: DS.warning,
+                        title: "Scheduled Malware Scan",
+                        subtitle: "Run automatic malware scans on a set schedule"
+                    ) {
+                        Toggle("", isOn: $settings.antivirusAutoScanEnabled)
+                            .labelsHidden()
+                            .tint(DS.warning)
+                    }
+
+                    Divider().padding(.leading, 44)
+
+                    SettingsRow(
+                        icon: "clock.fill",
+                        iconColor: DS.textMuted,
+                        title: "Scan Interval",
+                        subtitle: "How often to run the scheduled malware scan"
+                    ) {
+                        Picker("", selection: $settings.antivirusAutoScanIntervalHours) {
+                            Text("Every 12 hours").tag(12.0)
+                            Text("Every 24 hours").tag(24.0)
+                            Text("Every 3 days").tag(72.0)
+                            Text("Every 7 days").tag(168.0)
+                        }
+                        .labelsHidden()
+                        .frame(width: 160)
+                        .disabled(!settings.antivirusAutoScanEnabled)
+                        .opacity(settings.antivirusAutoScanEnabled ? 1.0 : 0.45)
+                    }
+                }
+            }
+
+            // Threat Response
+            SettingsCard {
+                VStack(spacing: 0) {
+                    SettingsRow(
+                        icon: "lock.doc.fill",
+                        iconColor: DS.warning,
+                        title: "Auto-Quarantine Threats",
+                        subtitle: "Move detected threats to quarantine automatically without asking"
+                    ) {
+                        Toggle("", isOn: $settings.antivirusQuarantineAuto)
+                            .labelsHidden()
+                            .tint(DS.warning)
+                    }
+
+                    Divider().padding(.leading, 44)
+
+                    SettingsRow(
+                        icon: "bell.badge.fill",
+                        iconColor: DS.brandGreen,
+                        title: "Notify on Threat Detected",
+                        subtitle: "Show a notification when malware or suspicious files are found"
+                    ) {
+                        Toggle("", isOn: $settings.antivirusNotifyOnThreat)
+                            .labelsHidden()
+                            .tint(DS.brandGreen)
+                    }
+                }
+            }
+
+            // Info note
+            HStack(spacing: 10) {
+                Image(systemName: "info.circle.fill")
+                    .foregroundColor(DS.brandTeal)
+                    .font(.system(size: 13))
+                Text("MacSweep uses heuristic analysis and known threat signatures. For enterprise-grade protection, consider pairing with a dedicated security suite.")
+                    .font(.system(size: 11))
+                    .foregroundColor(DS.textMuted)
+            }
+            .padding(12)
+            .background(RoundedRectangle(cornerRadius: 8).fill(DS.bgElevated))
+        }
+    }
+
+    // MARK: - Integrity Monitor Settings
+    var integritySettings: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            settingsHeader(icon: "checkmark.shield", title: "System Integrity", color: Color(hex: "169677"))
+
+            // Monitoring
+            SettingsCard {
+                VStack(spacing: 0) {
+                    SettingsRow(
+                        icon: "play.circle.fill",
+                        iconColor: DS.success,
+                        title: "Auto-Start Monitoring",
+                        subtitle: "Automatically begin monitoring when MacSweep launches"
+                    ) {
+                        Toggle("", isOn: $settings.integrityAutoMonitor)
+                            .labelsHidden()
+                            .tint(DS.success)
+                    }
+
+                    Divider().padding(.leading, 44)
+
+                    SettingsRow(
+                        icon: "clock.fill",
+                        iconColor: Color(hex: "169677"),
+                        title: "Rescan Interval",
+                        subtitle: "How often to automatically rescan all monitored items"
+                    ) {
+                        Picker("", selection: $settings.integrityScanIntervalMinutes) {
+                            Text("5 min").tag(5.0)
+                            Text("10 min").tag(10.0)
+                            Text("15 min").tag(15.0)
+                            Text("30 min").tag(30.0)
+                            Text("60 min").tag(60.0)
+                        }
+                        .labelsHidden()
+                        .frame(width: 100)
+                    }
+
+                    Divider().padding(.leading, 44)
+
+                    SettingsRow(
+                        icon: "bell.badge.fill",
+                        iconColor: DS.warning,
+                        title: "Notify on High Risk",
+                        subtitle: "Show a notification when high or critical risk items are found"
+                    ) {
+                        Toggle("", isOn: $settings.integrityNotifyOnHighRisk)
+                            .labelsHidden()
+                            .tint(DS.warning)
+                    }
+                }
+            }
+
+            // Scan Scopes
+            VStack(alignment: .leading, spacing: 10) {
+                Text("SCAN SCOPES")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(.secondary.opacity(0.6))
+                    .tracking(1.2)
+
+                SettingsCard {
+                    VStack(spacing: 0) {
+                        SettingsRow(
+                            icon: "clock.badge.exclamationmark",
+                            iconColor: DS.danger,
+                            title: "Monitor Cron Jobs",
+                            subtitle: "Scan crontab and /etc/periodic for scheduled tasks"
+                        ) {
+                            Toggle("", isOn: $settings.integrityMonitorCronJobs)
+                                .labelsHidden()
+                                .tint(DS.danger)
+                        }
+
+                        Divider().padding(.leading, 44)
+
+                        SettingsRow(
+                            icon: "lock.laptopcomputer",
+                            iconColor: DS.brandTeal,
+                            title: "Monitor SSH Config",
+                            subtitle: "Watch ~/.ssh/config and /etc/ssh for unauthorized changes"
+                        ) {
+                            Toggle("", isOn: $settings.integrityMonitorSSH)
+                                .labelsHidden()
+                                .tint(DS.brandTeal)
+                        }
+                    }
+                }
+            }
+
+            // Monitored locations info
+            VStack(alignment: .leading, spacing: 10) {
+                Text("MONITORED LOCATIONS")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(.secondary.opacity(0.6))
+                    .tracking(1.2)
+
+                let locations: [(String, String, Color)] = [
+                    ("bolt.circle", "~/Library/LaunchAgents", Color(hex: "169677")),
+                    ("bolt.shield", "/Library/LaunchAgents", Color(hex: "169677")),
+                    ("bolt.shield", "/Library/LaunchDaemons", DS.warning),
+                    ("clock.badge.exclamationmark", "User crontab & /etc/periodic", DS.danger),
+                    ("person.badge.key", "Login Items (BTM agents)", DS.brandTeal),
+                    ("network", "/etc/hosts", DS.brandGreen),
+                    ("lock.laptopcomputer", "~/.ssh/config & /etc/ssh", DS.brandTeal),
+                    ("puzzlepiece.extension", "/Library/SystemExtensions", Color(hex: "8B5CF6")),
+                    ("cpu", "/Library/Extensions (kexts)", DS.danger),
+                ]
+
+                SettingsCard {
+                    VStack(spacing: 0) {
+                        ForEach(Array(locations.enumerated()), id: \.0) { i, loc in
+                            HStack(spacing: 12) {
+                                Image(systemName: loc.0)
+                                    .font(.system(size: 10))
+                                    .foregroundColor(loc.2)
+                                    .frame(width: 14)
+                                Text(loc.1)
+                                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                                    .foregroundColor(DS.textPrimary)
+                                Spacer()
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundColor(DS.success)
+                            }
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 7)
+                            if i < locations.count - 1 {
+                                Divider().padding(.leading, 40)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Info note
+            HStack(spacing: 10) {
+                Image(systemName: "info.circle.fill")
+                    .foregroundColor(Color(hex: "169677"))
+                    .font(.system(size: 13))
+                Text("System Integrity Monitor continuously watches persistence mechanisms, code signatures, and critical configurations. Items flagged as high risk should be reviewed carefully.")
+                    .font(.system(size: 11))
+                    .foregroundColor(DS.textMuted)
+            }
+            .padding(12)
+            .background(RoundedRectangle(cornerRadius: 8).fill(DS.bgElevated))
+        }
+    }
+
     // MARK: - History Settings
     var historySettings: some View {
         VStack(alignment: .leading, spacing: 24) {
-            settingsHeader(icon: "clock.arrow.circlepath", title: "Cleanup History", color: Color(hex: "F5A623"))
+            settingsHeader(icon: "clock.arrow.circlepath", title: "Cleanup History", color: DS.warning)
 
             // Total freed banner
             HStack(spacing: 16) {
                 ZStack {
                     Circle()
-                        .fill(AppTheme.success.opacity(0.15))
+                        .fill(DS.success.opacity(0.15))
                         .frame(width: 56, height: 56)
                     Image(systemName: "sparkles")
                         .font(.system(size: 22, weight: .bold))
-                        .foregroundColor(AppTheme.success)
+                        .foregroundColor(DS.success)
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(ByteCountFormatter.string(fromByteCount: scanEngine.totalFreedBytes, countStyle: .file))
                         .font(.system(size: 26, weight: .bold, design: .rounded))
-                        .foregroundStyle(LinearGradient(colors: [AppTheme.success, AppTheme.accent], startPoint: .leading, endPoint: .trailing))
+                        .foregroundStyle(DS.brandGradient)
                     Text("Total freed across all sessions")
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
@@ -598,10 +1603,10 @@ struct SettingsView: View {
             .padding(16)
             .background(
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(AppTheme.success.opacity(0.05))
+                    .fill(DS.success.opacity(0.05))
                     .overlay(
                         RoundedRectangle(cornerRadius: 12)
-                            .stroke(AppTheme.success.opacity(0.15), lineWidth: 1)
+                            .stroke(DS.success.opacity(0.15), lineWidth: 1)
                     )
             )
 
@@ -632,7 +1637,7 @@ struct SettingsView: View {
                             scanEngine.clearFreedHistory()
                         }
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(AppTheme.danger)
+                        .foregroundColor(DS.danger)
                         .buttonStyle(.plain)
                     }
 
@@ -642,10 +1647,10 @@ struct SettingsView: View {
                                 HStack(spacing: 12) {
                                     ZStack {
                                         Circle()
-                                            .fill(AppTheme.success.opacity(0.12))
+                                            .fill(DS.success.opacity(0.12))
                                             .frame(width: 32, height: 32)
                                         Image(systemName: "checkmark.circle.fill")
-                                            .foregroundColor(AppTheme.success)
+                                            .foregroundColor(DS.success)
                                             .font(.system(size: 14))
                                     }
                                     VStack(alignment: .leading, spacing: 2) {
@@ -659,7 +1664,7 @@ struct SettingsView: View {
                                     Spacer()
                                     Text(rec.sizeFormatted)
                                         .font(.system(size: 12, weight: .bold, design: .rounded))
-                                        .foregroundColor(AppTheme.success)
+                                        .foregroundColor(DS.success)
                                 }
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 10)
@@ -677,15 +1682,19 @@ struct SettingsView: View {
     // MARK: - About
     var aboutView: some View {
         VStack(alignment: .leading, spacing: 24) {
-            settingsHeader(icon: "info.circle.fill", title: "About MacSweep", color: Color(hex: "764BA2"))
+            settingsHeader(icon: "info.circle.fill", title: "About MacSweep", color: DS.brandGreen)
 
             // Logo + name + BestTech.pk
             HStack(spacing: 20) {
-                LogoView(size: 64)
+                Image("AboutBrandIconSVG")
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 64, height: 64)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 VStack(alignment: .leading, spacing: 4) {
                     Text("MacSweep")
-                        .font(.system(size: 28, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
+                        .font(.system(size: 22, weight: .bold, design: .rounded))
+                        .foregroundColor(DS.textPrimary)
                     Text("Version \(appVersion)  •  By Mehmed Hunjra")
                         .font(.system(size: 13))
                         .foregroundColor(.secondary)
@@ -724,10 +1733,10 @@ struct SettingsView: View {
                 } label: {
                     Label("Share", systemImage: "square.and.arrow.up")
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(AppTheme.accent)
+                        .foregroundColor(DS.brandGreen)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
-                        .background(AppTheme.accent.opacity(0.1))
+                        .background(DS.brandGreen.opacity(0.1))
                         .cornerRadius(8)
                 }
                 .buttonStyle(.plain)
@@ -735,7 +1744,8 @@ struct SettingsView: View {
             .padding(20)
             .background(
                 RoundedRectangle(cornerRadius: 14)
-                    .fill(Color(NSColor.controlBackgroundColor))
+                    .fill(DS.bgPanel)
+                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(DS.borderSubtle, lineWidth: 1))
             )
 
             // ── Follow Me / Social Links ─────────────────────────
@@ -781,7 +1791,7 @@ struct SettingsView: View {
                 .padding(.horizontal, 18)
                 .padding(.vertical, 14)
                 .background(
-                    LinearGradient(colors: [Color(hex: "FFDD00"), Color(hex: "FF9900")],
+                    LinearGradient(colors: [DS.brandGreen, DS.brandTeal],
                                    startPoint: .leading, endPoint: .trailing)
                 )
                 .cornerRadius(12)
@@ -790,10 +1800,10 @@ struct SettingsView: View {
 
             // Info cards
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                AboutCard(icon: "lock.open.fill", title: "Open Source", subtitle: "Free for everyone, forever", color: Color(hex: "11998E"))
-                AboutCard(icon: "hand.raised.fill", title: "Privacy First", subtitle: "No telemetry, no tracking", color: Color(hex: "667EEA"))
-                AboutCard(icon: "bolt.fill", title: "Native Swift", subtitle: "Built with SwiftUI for macOS 13+", color: Color(hex: "F5A623"))
-                AboutCard(icon: "star.fill", title: "CleanMyMac Level", subtitle: "Professional cleaning tools", color: Color(hex: "BD10E0"))
+                AboutCard(icon: "lock.open.fill", title: "Open Source", subtitle: "Free for everyone, forever", color: DS.brandGreen)
+                AboutCard(icon: "hand.raised.fill", title: "Privacy First", subtitle: "No telemetry, no tracking", color: DS.brandTeal)
+                AboutCard(icon: "bolt.fill", title: "Native Swift", subtitle: "Built with SwiftUI for macOS 13+", color: DS.warning)
+                AboutCard(icon: "star.fill", title: "CleanMyMac Level", subtitle: "Professional cleaning tools", color: Color(hex: "8B5CF6"))
             }
 
             // Features list
@@ -804,18 +1814,29 @@ struct SettingsView: View {
                     .tracking(1.2)
 
                 let features: [(String, String, Color)] = [
-                    ("sparkles.rectangle.stack", "Smart Scan — deep system junk scanner", Color(hex: "11998E")),
-                    ("xmark.bin.fill", "System Junk — caches, logs, temp files", Color(hex: "FC5C7D")),
-                    ("arrow.up.doc.fill", "Large Files — find space hogs instantly", Color(hex: "F857A6")),
-                    ("trash.fill", "App Leftovers — clean uninstalled app data", Color(hex: "ED4264")),
-                    ("globe", "Browser Privacy — clear history and cookies", Color(hex: "56AB2F")),
-                    ("wrench.and.screwdriver.fill", "Maintenance — flush DNS, free RAM, more", Color(hex: "3A1C71")),
-                    ("hand.raised.fill", "Privacy — clear sensitive data trails", Color(hex: "FF416C")),
-                    ("chart.pie.fill", "Space Lens — visual disk usage map", Color(hex: "4776E6")),
-                    ("chevron.left.forwardslash.chevron.right", "Dev Cleaner — Xcode, VS Code, npm, CocoaPods", Color(hex: "E94560")),
-                    ("menubar.rectangle", "Menu Bar — always-on system monitor", AppTheme.accent),
-                    ("square.stack.3d.up.fill", "Process Manager — quit apps from menu bar", Color(hex: "764BA2")),
-                    ("gearshape.fill", "Settings — full control of every feature", Color(hex: "636e72")),
+                    ("sparkles.rectangle.stack", "Smart Scan — deep system junk scanner", DS.brandGreen),
+                    ("xmark.bin.fill", "System Junk — caches, logs, temp files", DS.danger),
+                    ("arrow.up.doc.fill", "Large Files — find space hogs instantly", DS.danger),
+                    ("trash.fill", "App Leftovers — clean uninstalled app data", DS.danger),
+                    ("doc.on.doc.fill", "Duplicates — find and remove duplicate files", Color(hex: "9B4DFF")),
+                    ("globe", "Browser Privacy — clear history and cookies", DS.success),
+                    ("wrench.and.screwdriver.fill", "Maintenance — flush DNS, free RAM, more", Color(hex: "8B5CF6")),
+                    ("hand.raised.fill", "Privacy — clear sensitive data trails", DS.danger),
+                    ("chart.pie.fill", "Space Lens — visual disk usage map", DS.brandTeal),
+                    ("chevron.left.forwardslash.chevron.right", "Dev Cleaner — Xcode, VS Code, npm, CocoaPods", DS.danger),
+                    ("bolt.shield", "Startup Optimizer — manage login items & launch agents", Color(hex: "FF8C3A")),
+                    ("memorychip", "Memory Optimizer — free up RAM instantly", Color(hex: "FF8C3A")),
+                    ("lock.shield", "Privacy & Protection — secure sensitive data", Color(hex: "D459A0")),
+                    ("menubar.rectangle", "Menu Bar — always-on system monitor", DS.brandGreen),
+                    ("square.stack.3d.up.fill", "Applications — manage and uninstall apps", Color(hex: "3A70E0")),
+                    ("shield.slash.fill", "Malware Scanner — detect & remove malware", DS.danger),
+                    ("shield.fill", "Real-Time Protection — live threat monitoring", DS.success),
+                    ("ant.fill", "Adware Cleaner — remove adware & persistence agents", DS.warning),
+                    ("lock.trianglebadge.exclamationmark.fill", "Ransomware Guard — monitor suspicious file changes", DS.danger),
+                    ("network", "Network Monitor — track & block suspicious connections", DS.brandTeal),
+                    ("lock.doc.fill", "Quarantine Manager — manage isolated threat files", Color(hex: "9B4DFF")),
+                    ("checkmark.shield", "System Integrity — monitor persistence & configs", Color(hex: "169677")),
+                    ("gearshape.fill", "Settings — full control of every feature", DS.textMuted),
                 ]
 
                 SettingsCard {
@@ -832,7 +1853,7 @@ struct SettingsView: View {
                                 Spacer()
                                 Image(systemName: "checkmark")
                                     .font(.system(size: 10, weight: .bold))
-                                    .foregroundColor(AppTheme.success)
+                                    .foregroundColor(DS.success)
                             }
                             .padding(.horizontal, 14)
                             .padding(.vertical, 7)
@@ -859,11 +1880,11 @@ struct SettingsView: View {
                             HStack(spacing: 10) {
                                 ZStack {
                                     RoundedRectangle(cornerRadius: 6)
-                                        .fill(Color(hex: "667EEA").opacity(0.15))
+                                        .fill(DS.brandGreen.opacity(0.15))
                                         .frame(width: 28, height: 28)
                                     Image(systemName: "hand.raised.fill")
                                         .font(.system(size: 12, weight: .semibold))
-                                        .foregroundColor(Color(hex: "667EEA"))
+                                        .foregroundColor(DS.brandGreen)
                                 }
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text("Privacy Policy")
@@ -891,11 +1912,11 @@ struct SettingsView: View {
                             HStack(spacing: 10) {
                                 ZStack {
                                     RoundedRectangle(cornerRadius: 6)
-                                        .fill(Color(hex: "11998E").opacity(0.15))
+                                        .fill(DS.brandTeal.opacity(0.15))
                                         .frame(width: 28, height: 28)
                                     Image(systemName: "doc.text.fill")
                                         .font(.system(size: 12, weight: .semibold))
-                                        .foregroundColor(Color(hex: "11998E"))
+                                        .foregroundColor(DS.brandTeal)
                                 }
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text("Terms of Service")
@@ -973,6 +1994,30 @@ struct SettingsView: View {
         }
     }
 
+    private func formatPolicyDate(_ date: Date?) -> String {
+        guard let date else { return "Never" }
+        let fmt = DateFormatter()
+        fmt.dateStyle = .medium
+        fmt.timeStyle = .short
+        return fmt.string(from: date)
+    }
+
+    private var nextScheduledRunText: String {
+        guard settings.autoScanEnabled else { return "Disabled" }
+        guard let last = settings.autoLastRunAt else { return "Due now" }
+        let next = last.addingTimeInterval(settings.autoScanIntervalSeconds)
+        if next <= Date() { return "Due now" }
+        return formatPolicyDate(next)
+    }
+
+    private var nextUpdateCheckText: String {
+        guard settings.updateAutoCheckEnabled else { return "Disabled" }
+        guard let last = settings.updateLastCheckAt else { return "Due now" }
+        let next = last.addingTimeInterval(max(1, settings.updateCheckIntervalHours) * 3600)
+        if next <= Date() { return "Due now" }
+        return formatPolicyDate(next)
+    }
+
     @ViewBuilder
     func settingsHeader(icon: String, title: String, color: Color) -> some View {
         HStack(spacing: 12) {
@@ -1012,12 +2057,12 @@ struct SettingsCard<Content: View>: View {
         content
             .background(
                 RoundedRectangle(cornerRadius: 10)
-                    .fill(Color(NSColor.controlBackgroundColor))
+                    .fill(DS.bgPanel)
             )
             .clipShape(RoundedRectangle(cornerRadius: 10))
             .overlay(
                 RoundedRectangle(cornerRadius: 10)
-                    .stroke(Color.gray.opacity(0.12), lineWidth: 1)
+                    .stroke(DS.borderSubtle, lineWidth: 1)
             )
     }
 }
@@ -1087,12 +2132,12 @@ struct PermissionShortcutRow: View {
             Button("Open") { action() }
                 .buttonStyle(.plain)
                 .font(.system(size: 11, weight: .bold))
-                .foregroundColor(AppTheme.accent)
+                .foregroundColor(DS.brandGreen)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
                 .background(
                     RoundedRectangle(cornerRadius: 6)
-                        .fill(AppTheme.accent.opacity(0.12))
+                        .fill(DS.brandGreen.opacity(0.12))
                 )
         }
         .padding(.horizontal, 14)
@@ -1138,7 +2183,7 @@ struct SocialButton: View {
             .padding(.vertical, 12)
             .background(
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(Color(NSColor.controlBackgroundColor))
+                    .fill(DS.bgPanel)
                     .overlay(
                         RoundedRectangle(cornerRadius: 12)
                             .stroke(hovered ? Color(gradient[0]) : Color.gray.opacity(0.12), lineWidth: hovered ? 1.5 : 1)
@@ -1188,7 +2233,7 @@ struct AboutCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 10)
-                .fill(Color(NSColor.controlBackgroundColor))
+                .fill(DS.bgPanel)
         )
     }
 }

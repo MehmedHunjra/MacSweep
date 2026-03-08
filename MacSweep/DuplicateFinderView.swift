@@ -7,11 +7,24 @@ struct DuplicateFinderView: View {
     @ObservedObject var engine: DuplicateEngine
     @State private var selectedGroupId: String?
     @State private var showConfirm = false
+    @EnvironmentObject var navManager: NavigationManager
+
+    private var theme: SectionTheme { SectionTheme.theme(for: .duplicates) }
 
     var body: some View {
         VStack(spacing: 0) {
             if !engine.isScanning && !engine.hasScanned {
-                landingScreen
+                VStack(spacing: 0) {
+                    navHeader
+                    landingScreen
+                }
+            } else if engine.isScanning {
+                ToolScanningView(
+                    section: .duplicates,
+                    scanningTitle: "Scanning for Duplicates...",
+                    currentPath: $engine.currentScanPath,
+                    onStop: { engine.cancelScan() }
+                )
             } else {
                 dupHeader
                 Divider()
@@ -29,7 +42,7 @@ struct DuplicateFinderView: View {
                 dupFooter
             }
         }
-        .background(Color(NSColor.controlBackgroundColor))
+        .background(DS.bg)
         .alert("Remove Duplicates?", isPresented: $showConfirm) {
             Button("Cancel", role: .cancel) {}
             Button("Move to Trash", role: .destructive) {
@@ -40,89 +53,121 @@ struct DuplicateFinderView: View {
         }
     }
 
-    // MARK: - Landing
-    private var landingScreen: some View {
-        ZStack {
-            LinearGradient(
-                colors: [Color(hex: "1A0533"), Color(hex: "2D1054"), Color(hex: "4A1A7A"), Color(hex: "1A0533")],
-                startPoint: .top, endPoint: .bottom
-            )
-
-            VStack(spacing: 0) {
-                Spacer()
-
-                ZStack {
-                    RoundedRectangle(cornerRadius: 32)
-                        .fill(LinearGradient(colors: [Color(hex: "9C27B0").opacity(0.6), Color(hex: "E040FB").opacity(0.4)], startPoint: .topLeading, endPoint: .bottomTrailing))
-                        .frame(width: 120, height: 120)
-                        .shadow(color: Color(hex: "9C27B0").opacity(0.4), radius: 30, y: 8)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 32)
-                                .strokeBorder(Color.white.opacity(0.15), lineWidth: 1)
-                        )
-
-                    Image(systemName: "doc.on.doc.fill")
-                        .font(.system(size: 50, weight: .semibold))
-                        .foregroundStyle(LinearGradient(colors: [.white, Color(hex: "E1BEE7")], startPoint: .topLeading, endPoint: .bottomTrailing))
-                }
-                .padding(.bottom, 28)
-
-                Text("Duplicate Finder")
-                    .font(.system(size: 32, weight: .bold, design: .rounded))
-                    .foregroundColor(.white)
-                    .padding(.bottom, 8)
-
-                Text("Find and remove duplicate files to\nreclaim valuable disk space.")
-                    .font(.system(size: 14))
-                    .foregroundColor(.white.opacity(0.5))
-                    .multilineTextAlignment(.center)
-                    .lineSpacing(3)
-                    .padding(.bottom, 24)
-
-                Button(action: {
-                    engine.selectDirectory()
-                }) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "folder.fill")
-                            .foregroundColor(Color(hex: "E040FB"))
-                        Text(engine.selectedDirectory?.lastPathComponent ?? FileManager.default.homeDirectoryForCurrentUser.lastPathComponent)
-                            .foregroundColor(.white)
-                        Image(systemName: "chevron.down")
-                            .foregroundColor(.white.opacity(0.5))
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(Color.white.opacity(0.05))
-                    .cornerRadius(8)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(Color.white.opacity(0.1), lineWidth: 1)
-                    )
+    // MARK: - Nav Header (landing)
+    private var navHeader: some View {
+        HStack {
+            HStack(spacing: 8) {
+                Button { navManager.goBack() } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(navManager.canGoBack ? DS.textSecondary : DS.textMuted.opacity(0.5))
+                        .frame(width: 32, height: 32)
+                        .background(navManager.canGoBack ? DS.bgElevated : DS.bgElevated.opacity(0.5))
+                        .clipShape(Circle())
                 }
                 .buttonStyle(.plain)
-                .padding(.bottom, 32)
+                .disabled(!navManager.canGoBack)
 
-                ToolPrimaryActionButton(
-                    title: "Find Duplicates",
-                    colors: [Color(hex: "9C27B0"), Color(hex: "E040FB")],
-                    icon: "magnifyingglass"
-                ) {
-                    engine.hasScanned = true
-                    engine.scanAll()
+                Button { navManager.goForward() } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(navManager.canGoForward ? DS.textSecondary : DS.textMuted.opacity(0.5))
+                        .frame(width: 32, height: 32)
+                        .background(navManager.canGoForward ? DS.bgElevated : DS.bgElevated.opacity(0.5))
+                        .clipShape(Circle())
                 }
-
-                Spacer()
+                .buttonStyle(.plain)
+                .disabled(!navManager.canGoForward)
             }
+            Spacer()
         }
+        .padding(.horizontal, 24)
+        .padding(.top, 16)
+        .padding(.bottom, 8)
     }
 
-    // MARK: - Header
+    // MARK: - Landing
+    private var landingScreen: some View {
+        ToolLandingView(
+            section: .duplicates,
+            subtitle: "Find and remove duplicate files to\nreclaim valuable disk space.",
+            actionLabel: "Find Duplicates",
+            extraContent: AnyView(dupFolderPicker),
+            onAction: {
+                engine.hasScanned = true
+                engine.scanAll()
+            }
+        )
+    }
+
+    private var dupFolderPicker: some View {
+        Menu {
+            Button { engine.selectedDirectory = FileManager.default.homeDirectoryForCurrentUser } label: { Label("Home Folder", systemImage: "house.fill") }
+            Button { engine.selectedDirectory = URL(fileURLWithPath: "/") } label: { Label("Macintosh HD", systemImage: "internaldrive.fill") }
+            Divider()
+            Button { engine.selectDirectory() } label: { Label("Choose Folder…", systemImage: "folder.badge.plus") }
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: engine.selectedDirectory?.path == "/" ? "internaldrive.fill" : "folder.fill")
+                    .foregroundColor(theme.glow)
+                Text(engine.selectedDirectory?.lastPathComponent ?? FileManager.default.homeDirectoryForCurrentUser.lastPathComponent)
+                    .font(MSFont.body)
+                    .foregroundColor(DS.textPrimary)
+                Spacer()
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(DS.textMuted)
+            }
+            .padding(.horizontal, 18)
+            .padding(.vertical, 12)
+            .frame(width: 260)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(DS.bgElevated)
+                    .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(DS.borderMid, lineWidth: 1))
+            )
+        }
+        .menuStyle(.borderlessButton)
+    }
+
+    // MARK: - Header (results)
     var dupHeader: some View {
         HStack(spacing: 16) {
+            HStack(spacing: 8) {
+                Button {
+                    if engine.hasScanned && !engine.isScanning {
+                        engine.hasScanned = false
+                    } else {
+                        navManager.goBack()
+                    }
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor((!engine.hasScanned && !navManager.canGoBack) ? DS.textMuted.opacity(0.5) : DS.textSecondary)
+                        .frame(width: 32, height: 32)
+                        .background((!engine.hasScanned && !navManager.canGoBack) ? DS.bgElevated.opacity(0.5) : DS.bgElevated)
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .disabled(!engine.hasScanned && !navManager.canGoBack)
+
+                Button {
+                    navManager.goForward()
+                } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(navManager.canGoForward ? DS.textSecondary : DS.textMuted.opacity(0.5))
+                        .frame(width: 32, height: 32)
+                        .background(navManager.canGoForward ? DS.bgElevated : DS.bgElevated.opacity(0.5))
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .disabled(!navManager.canGoForward)
+            }
+
             ZStack {
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(LinearGradient(colors: [Color(hex: "9C27B0"), Color(hex: "E040FB")],
-                                         startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .fill(theme.linearGradient)
                     .frame(width: 44, height: 44)
                 Image(systemName: "doc.on.doc.fill")
                     .font(.system(size: 20, weight: .bold))
@@ -130,27 +175,21 @@ struct DuplicateFinderView: View {
             }
             VStack(alignment: .leading, spacing: 4) {
                 Text("Duplicate Finder")
-                    .font(.system(size: 20, weight: .bold, design: .rounded))
+                    .font(MSFont.title2)
+                    .foregroundColor(DS.textPrimary)
                 Text("Find identical files across your folders")
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
+                    .font(MSFont.caption)
+                    .foregroundColor(DS.textMuted)
             }
             Spacer()
-            if engine.isScanning {
-                HStack(spacing: 8) {
-                    ProgressView().scaleEffect(0.7)
-                    Text("Scanning…")
-                        .font(.system(size: 12))
-                        .foregroundColor(.secondary)
-                }
-            } else {
+            if !engine.isScanning {
                 VStack(alignment: .trailing, spacing: 2) {
                     Text("\(engine.groups.count) groups")
                         .font(.system(size: 14, weight: .bold, design: .rounded))
-                        .foregroundColor(Color(hex: "9C27B0"))
+                        .foregroundColor(theme.glow)
                     Text(ByteCountFormatter.string(fromByteCount: engine.totalWastedSize, countStyle: .file) + " wasted")
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
+                        .font(MSFont.caption)
+                        .foregroundColor(DS.textMuted)
                 }
             }
         }
@@ -174,7 +213,7 @@ struct DuplicateFinderView: View {
             .padding(.horizontal, 8)
         }
         .frame(width: 220)
-        .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+        .background(DS.bgElevated.opacity(0.5))
     }
 
     // MARK: - Item List
@@ -183,27 +222,28 @@ struct DuplicateFinderView: View {
             HStack(spacing: 12) {
                 Image(systemName: group.icon)
                     .font(.system(size: 18, weight: .bold))
-                    .foregroundColor(Color(hex: "9C27B0"))
+                    .foregroundColor(theme.glow)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(group.fileName)
-                        .font(.system(size: 16, weight: .bold))
+                        .font(MSFont.headline)
+                        .foregroundColor(DS.textPrimary)
                     Text("\(group.files.count) copies · \(group.sizeFormatted) each")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
+                        .font(MSFont.caption)
+                        .foregroundColor(DS.textMuted)
                 }
                 Spacer()
                 Button {
                     engine.autoSelectDuplicates(groupId: group.id)
                 } label: {
                     Text("Keep First")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(AppTheme.accent)
+                        .font(MSFont.caption)
+                        .foregroundColor(theme.glow)
                 }
                 .buttonStyle(.plain)
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 14)
-            .background(Color(NSColor.controlBackgroundColor))
+            .background(DS.bgElevated)
 
             Divider()
 
@@ -227,9 +267,10 @@ struct DuplicateFinderView: View {
         VStack(spacing: 12) {
             Image(systemName: "doc.on.doc")
                 .font(.system(size: 40))
-                .foregroundColor(.secondary.opacity(0.3))
+                .foregroundColor(DS.textMuted.opacity(0.3))
             Text("Select a duplicate group")
-                .foregroundColor(.secondary)
+                .font(MSFont.body)
+                .foregroundColor(DS.textMuted)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -241,11 +282,42 @@ struct DuplicateFinderView: View {
                 engine.scanAll()
             } label: {
                 Label("Rescan", systemImage: "arrow.clockwise")
-                    .font(.system(size: 12, weight: .medium))
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 7)
-                    .background(Color(NSColor.controlBackgroundColor))
-                    .cornerRadius(8)
+                    .font(MSFont.caption)
+                    .foregroundColor(DS.textSecondary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(DS.bgElevated)
+                    .cornerRadius(6)
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                engine.autoSelectAllDuplicates()
+            } label: {
+                Label("Keep All First", systemImage: "wand.and.stars")
+                    .font(MSFont.caption)
+                    .foregroundColor(theme.glow)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(theme.glow.opacity(0.1))
+                    .cornerRadius(6)
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                for gi in engine.groups.indices {
+                    for fi in engine.groups[gi].files.indices {
+                        engine.groups[gi].files[fi].isSelected = false
+                    }
+                }
+            } label: {
+                Label("Deselect All", systemImage: "xmark.circle")
+                    .font(MSFont.caption)
+                    .foregroundColor(DS.textSecondary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(DS.bgElevated)
+                    .cornerRadius(6)
             }
             .buttonStyle(.plain)
 
@@ -253,8 +325,8 @@ struct DuplicateFinderView: View {
 
             if !engine.isScanning {
                 Text("\(engine.selectedCount) files selected · \(ByteCountFormatter.string(fromByteCount: engine.selectedSize, countStyle: .file))")
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
+                    .font(MSFont.caption)
+                    .foregroundColor(DS.textMuted)
             }
 
             Button {
@@ -264,7 +336,7 @@ struct DuplicateFinderView: View {
                     Image(systemName: "trash")
                     Text("Remove Duplicates")
                 }
-                .font(.system(size: 13, weight: .semibold))
+                .font(MSFont.headline)
                 .foregroundColor(.white)
                 .padding(.horizontal, 20)
                 .padding(.vertical, 9)
@@ -272,8 +344,7 @@ struct DuplicateFinderView: View {
                     RoundedRectangle(cornerRadius: 10)
                         .fill(engine.selectedCount == 0
                               ? AnyShapeStyle(Color.gray)
-                              : AnyShapeStyle(LinearGradient(colors: [Color(hex: "9C27B0"), Color(hex: "E040FB")],
-                                                             startPoint: .leading, endPoint: .trailing)))
+                              : AnyShapeStyle(theme.linearGradient))
                 )
             }
             .buttonStyle(.plain)
@@ -290,6 +361,7 @@ struct DupGroupRow: View {
     let isSelected: Bool
     let onTap: () -> Void
     @State private var hovered = false
+    private var theme: SectionTheme { SectionTheme.theme(for: .duplicates) }
 
     var body: some View {
         Button(action: onTap) {
@@ -297,41 +369,41 @@ struct DupGroupRow: View {
                 ZStack {
                     RoundedRectangle(cornerRadius: 8)
                         .fill(isSelected
-                              ? AnyShapeStyle(LinearGradient(colors: [Color(hex: "9C27B0"), Color(hex: "E040FB")], startPoint: .topLeading, endPoint: .bottomTrailing))
+                              ? AnyShapeStyle(theme.linearGradient)
                               : AnyShapeStyle(Color.clear))
                         .frame(width: 28, height: 28)
                     Image(systemName: group.icon)
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(isSelected ? .white : .secondary)
+                        .foregroundColor(isSelected ? .white : DS.textMuted)
                 }
                 VStack(alignment: .leading, spacing: 1) {
                     Text(group.fileName)
-                        .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
-                        .foregroundColor(isSelected ? .primary : .secondary)
+                        .font(MSFont.body)
+                        .foregroundColor(isSelected ? DS.textPrimary : DS.textSecondary)
                         .lineLimit(1)
                     Text("\(group.files.count) copies · \(group.sizeFormatted)")
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
+                        .font(MSFont.mono)
+                        .foregroundColor(DS.textMuted)
                 }
                 Spacer()
                 Text("\(group.files.count)")
-                    .font(.system(size: 10, weight: .bold))
+                    .font(MSFont.mono)
                     .foregroundColor(.white)
                     .padding(.horizontal, 5)
                     .padding(.vertical, 2)
-                    .background(Color(hex: "9C27B0").cornerRadius(4))
+                    .background(theme.glow.cornerRadius(4))
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(isSelected ? Color(hex: "9C27B0").opacity(0.08) : (hovered ? Color.gray.opacity(0.06) : Color.clear))
+                    .fill(isSelected ? theme.glow.opacity(0.08) : (hovered ? DS.bgElevated.opacity(0.5) : Color.clear))
             )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovered = $0 }
-        .animation(.easeOut(duration: 0.12), value: hovered)
+        .animation(Motion.fast, value: hovered)
     }
 }
 
@@ -341,13 +413,14 @@ struct DupFileRow: View {
     let index: Int
     let onToggle: () -> Void
     @State private var hovered = false
+    private var theme: SectionTheme { SectionTheme.theme(for: .duplicates) }
 
     var body: some View {
         HStack(spacing: 12) {
             Button(action: onToggle) {
                 Image(systemName: file.isSelected ? "checkmark.square.fill" : "square")
                     .font(.system(size: 16))
-                    .foregroundColor(file.isSelected ? AppTheme.accent : .secondary)
+                    .foregroundColor(file.isSelected ? theme.glow : DS.textMuted)
             }
             .buttonStyle(.plain)
 
@@ -357,42 +430,51 @@ struct DupFileRow: View {
                     .foregroundColor(.white)
                     .padding(.horizontal, 5)
                     .padding(.vertical, 2)
-                    .background(AppTheme.success.cornerRadius(3))
+                    .background(DS.brandGreen.opacity(0.9).cornerRadius(3))
             }
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(file.name)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(MSFont.body)
+                    .foregroundColor(DS.textPrimary)
                     .lineLimit(1)
                 Text(file.path.replacingOccurrences(of: FileManager.default.homeDirectoryForCurrentUser.path, with: "~"))
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundColor(.secondary)
+                    .font(MSFont.mono)
+                    .foregroundColor(DS.textMuted)
                     .lineLimit(1)
             }
 
             Spacer()
 
             Text(file.sizeFormatted)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundColor(.secondary)
+                .font(MSFont.caption)
+                .foregroundColor(DS.textSecondary)
 
             if hovered {
                 Button {
                     NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: file.path)])
                 } label: {
-                    Text("Reveal")
-                        .font(.system(size: 9))
-                        .foregroundColor(AppTheme.accent)
+                    HStack(spacing: 4) {
+                        Image(systemName: "folder.fill")
+                            .font(.system(size: 11))
+                        Text("Reveal")
+                            .font(MSFont.caption)
+                    }
+                    .foregroundColor(theme.glow)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(RoundedRectangle(cornerRadius: 5).fill(theme.glow.opacity(0.12)))
                 }
                 .buttonStyle(.plain)
+                .transition(.opacity)
             }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .background(hovered ? Color.gray.opacity(0.04) : Color.clear)
+        .background(hovered ? DS.bgElevated : Color.clear)
         .contentShape(Rectangle())
         .onHover { hovered = $0 }
-        .animation(.easeOut(duration: 0.12), value: hovered)
+        .animation(Motion.fast, value: hovered)
     }
 }
 
@@ -403,6 +485,9 @@ class DuplicateEngine: ObservableObject {
     @Published var isScanning = false
     @Published var hasScanned = false
     @Published var selectedDirectory: URL? = nil
+    @Published var currentScanPath: String = ""
+    private var scanTask: Task<Void, Never>?
+    private var scanSession = UUID()
 
     var totalWastedSize: Int64 {
         groups.reduce(0) { total, group in
@@ -429,26 +514,106 @@ class DuplicateEngine: ObservableObject {
     }
 
     func scanAll() {
-        isScanning = true
-        groups = []
+        scanTask?.cancel()
+        let session = UUID()
+        scanSession = session
 
-        Task {
-            let targetURL = self.selectedDirectory
-            let found = await Task.detached(priority: .userInitiated) {
-                self.findDuplicates(in: targetURL)
-            }.value
+        isScanning = true
+        hasScanned = true
+        groups = []
+        currentScanPath = "Preparing scan..."
+
+        let targetURL = selectedDirectory
+        scanTask = Task.detached(priority: .utility) { [weak self] in
+            guard let self else { return }
+            let found = self.findDuplicates(in: targetURL) { status in
+                Task { @MainActor [weak self] in
+                    guard let self, self.scanSession == session, self.isScanning else { return }
+                    self.currentScanPath = status
+                }
+            }
+
+            if Task.isCancelled { return }
 
             await MainActor.run {
+                guard self.scanSession == session else { return }
                 self.groups = found
+                self.currentScanPath = "Scan complete."
                 self.isScanning = false
+                self.scanTask = nil
             }
         }
     }
 
-    nonisolated func findDuplicates(in target: URL?) -> [DuplicateGroup] {
+    func cancelScan() {
+        scanTask?.cancel()
+        scanTask = nil
+        scanSession = UUID()
+        isScanning = false
+        hasScanned = false
+        currentScanPath = "Scan cancelled."
+    }
+
+    nonisolated private struct DuplicateScanOptions {
+        let minFileSizeBytes: Int64
+        let skipHidden: Bool
+    }
+
+    nonisolated private static let quickFingerprintChunkSize = 64 * 1024
+    nonisolated private static let fullHashChunkSize = 1024 * 1024
+    nonisolated private static let excludedSystemRoots: [String] = [
+        "/System",
+        "/private/var/vm",
+        "/private/var/folders",
+        "/private/var/run",
+        "/private/var/db",
+        "/Volumes",
+        "/dev",
+        "/cores",
+        "/net",
+        "/home"
+    ]
+
+    nonisolated private static func loadScanOptions() -> DuplicateScanOptions {
+        let ud = UserDefaults.standard
+        let minSizeMB = (ud.object(forKey: "duplicateMinSizeMB") as? Double) ?? 1.0
+        let minFileSizeBytes = max(Int64(minSizeMB * 1024 * 1024), 4 * 1024)
+        let skipHidden = (ud.object(forKey: "duplicateSkipHiddenFiles") as? Bool) ?? true
+        return DuplicateScanOptions(minFileSizeBytes: minFileSizeBytes, skipHidden: skipHidden)
+    }
+
+    nonisolated private static func isExcludedSystemPath(_ path: String) -> Bool {
+        excludedSystemRoots.contains { root in
+            path == root || path.hasPrefix(root + "/")
+        }
+    }
+
+    nonisolated private static func iconForFileName(_ fileName: String) -> String {
+        switch (fileName as NSString).pathExtension.lowercased() {
+        case "jpg", "jpeg", "png", "gif", "heic", "webp", "tiff":
+            return "photo"
+        case "mp4", "mov", "avi", "mkv":
+            return "film"
+        case "mp3", "aac", "wav", "flac", "m4a":
+            return "music.note"
+        case "pdf":
+            return "doc.richtext"
+        case "zip", "rar", "7z", "dmg":
+            return "archivebox"
+        case "doc", "docx", "txt", "rtf", "pages":
+            return "doc.text"
+        case "xls", "xlsx", "csv", "numbers":
+            return "tablecells"
+        default:
+            return "doc"
+        }
+    }
+
+    nonisolated func findDuplicates(in target: URL?, onProgress: (@Sendable (String) -> Void)? = nil) -> [DuplicateGroup] {
         let fm = FileManager.default
         let home = fm.homeDirectoryForCurrentUser.path
-        
+        let options = Self.loadScanOptions()
+
         let dirs: [String]
         if let targetURL = target {
             dirs = [targetURL.path]
@@ -463,38 +628,96 @@ class DuplicateEngine: ObservableObject {
             ]
         }
 
-        // Phase 1: Group files by size (only files > 4KB)
-        var sizeMap: [Int64: [String]] = [:]
-        for dir in dirs {
-            guard let enumerator = fm.enumerator(atPath: dir) else { continue }
-            while let file = enumerator.nextObject() as? String {
-                let fullPath = "\(dir)/\(file)"
-                var isDir: ObjCBool = false
-                guard fm.fileExists(atPath: fullPath, isDirectory: &isDir), !isDir.boolValue else { continue }
-                guard let attrs = try? fm.attributesOfItem(atPath: fullPath),
-                      let size = attrs[.size] as? Int64, size > 4096 else { continue }
-                sizeMap[size, default: []].append(fullPath)
-            }
-        }
+        // Keep only duplicate-size candidates to cap memory growth on large scans.
+        var firstPathBySize: [Int64: String] = [:]
+        var candidatePathsBySize: [Int64: [String]] = [:]
+        var scannedCount = 0
+        var lastProgressAt = Date.distantPast
 
-        // Phase 2: For files with same size, compare MD5 hash
-        var hashGroups: [String: [String]] = [:]
-        for (_, paths) in sizeMap where paths.count >= 2 {
-            for path in paths {
-                if let hash = Self.md5Hash(of: path) {
-                    hashGroups[hash, default: []].append(path)
+        let resourceKeys: Set<URLResourceKey> = [.isRegularFileKey, .fileSizeKey]
+        let enumOptions: FileManager.DirectoryEnumerationOptions = options.skipHidden
+            ? [.skipsPackageDescendants, .skipsHiddenFiles]
+            : [.skipsPackageDescendants]
+
+        for dir in dirs {
+            if Task.isCancelled { return [] }
+            let rootURL = URL(fileURLWithPath: dir, isDirectory: true)
+            guard let enumerator = fm.enumerator(
+                at: rootURL,
+                includingPropertiesForKeys: Array(resourceKeys),
+                options: enumOptions,
+                errorHandler: { _, _ in true }
+            ) else { continue }
+
+            while let url = enumerator.nextObject() as? URL {
+                if Task.isCancelled { return [] }
+
+                let fullPath = url.path
+                if dir == "/" && Self.isExcludedSystemPath(fullPath) {
+                    enumerator.skipDescendants()
+                    continue
+                }
+
+                guard let values = try? url.resourceValues(forKeys: resourceKeys),
+                      values.isRegularFile == true,
+                      let fileSize = values.fileSize else { continue }
+
+                let size = Int64(fileSize)
+                guard size >= options.minFileSizeBytes else { continue }
+
+                scannedCount += 1
+                let now = Date()
+                if now.timeIntervalSince(lastProgressAt) >= 0.12 {
+                    lastProgressAt = now
+                    let name = url.lastPathComponent.isEmpty ? fullPath : url.lastPathComponent
+                    onProgress?("Scanning \(scannedCount) files... \(name)")
+                }
+
+                if candidatePathsBySize[size] != nil {
+                    candidatePathsBySize[size, default: []].append(fullPath)
+                } else if let first = firstPathBySize[size] {
+                    candidatePathsBySize[size] = [first, fullPath]
+                    firstPathBySize.removeValue(forKey: size)
+                } else {
+                    firstPathBySize[size] = fullPath
                 }
             }
         }
 
-        // Phase 3: Build duplicate groups
+        // Phase 2: quick fingerprint pass to avoid full hashing on likely-unique content.
+        var quickGroups: [String: [String]] = [:]
+        for (size, paths) in candidatePathsBySize where paths.count >= 2 {
+            if Task.isCancelled { return [] }
+            for path in paths {
+                if Task.isCancelled { return [] }
+                if let quick = Self.quickFingerprint(of: path, fileSize: size) {
+                    quickGroups[quick, default: []].append(path)
+                }
+            }
+        }
+
+        // Phase 3: for fingerprint collisions, run full-file hash.
+        var hashGroups: [String: [String]] = [:]
+        for (_, paths) in quickGroups where paths.count >= 2 {
+            if Task.isCancelled { return [] }
+            for path in paths {
+                if Task.isCancelled { return [] }
+                if let fullHash = Self.md5Hash(of: path) {
+                    hashGroups[fullHash, default: []].append(path)
+                }
+            }
+        }
+
+        // Phase 4: Build duplicate groups.
         var results: [DuplicateGroup] = []
         for (hash, paths) in hashGroups where paths.count >= 2 {
+            if Task.isCancelled { return [] }
             let sortedPaths = paths.sorted()
-            let fileName = (sortedPaths.first! as NSString).lastPathComponent
-            let fileSize = (try? fm.attributesOfItem(atPath: sortedPaths.first!))?[.size] as? Int64 ?? 0
+            guard let firstPath = sortedPaths.first else { continue }
+            let fileName = (firstPath as NSString).lastPathComponent
+            let fileSize = (try? fm.attributesOfItem(atPath: firstPath)[.size] as? Int64) ?? 0
 
-            let files = sortedPaths.enumerated().map { idx, path in
+            let files = sortedPaths.map { path in
                 DuplicateFile(
                     name: (path as NSString).lastPathComponent,
                     path: path,
@@ -503,37 +726,56 @@ class DuplicateEngine: ObservableObject {
                 )
             }
 
-            let ext = (fileName as NSString).pathExtension.lowercased()
-            let icon: String
-            switch ext {
-            case "jpg", "jpeg", "png", "gif", "heic", "webp", "tiff":
-                icon = "photo"
-            case "mp4", "mov", "avi", "mkv":
-                icon = "film"
-            case "mp3", "aac", "wav", "flac", "m4a":
-                icon = "music.note"
-            case "pdf":
-                icon = "doc.richtext"
-            case "zip", "rar", "7z", "dmg":
-                icon = "archivebox"
-            case "doc", "docx", "txt", "rtf", "pages":
-                icon = "doc.text"
-            case "xls", "xlsx", "csv", "numbers":
-                icon = "tablecells"
-            default:
-                icon = "doc"
-            }
-
             results.append(DuplicateGroup(
                 hash: hash,
                 fileName: fileName,
                 fileSize: fileSize,
                 files: files,
-                icon: icon
+                icon: Self.iconForFileName(fileName)
             ))
         }
 
         return results.sorted { $0.fileSize * Int64($0.files.count) > $1.fileSize * Int64($1.files.count) }
+    }
+
+    nonisolated static func quickFingerprint(of path: String, fileSize: Int64) -> String? {
+        guard let file = FileHandle(forReadingAtPath: path) else { return nil }
+        defer { try? file.close() }
+
+        let chunkSize = quickFingerprintChunkSize
+        let firstSize = min(chunkSize, Int(fileSize))
+        guard firstSize > 0 else { return nil }
+
+        var hasher = Insecure.MD5()
+        do {
+            try file.seek(toOffset: 0)
+            if let first = try file.read(upToCount: firstSize), !first.isEmpty {
+                hasher.update(data: first)
+            } else {
+                return nil
+            }
+
+            if fileSize > Int64(chunkSize * 3) {
+                let middleOffset = UInt64(max((fileSize / 2) - Int64(chunkSize / 2), 0))
+                try file.seek(toOffset: middleOffset)
+                if let middle = try file.read(upToCount: chunkSize), !middle.isEmpty {
+                    hasher.update(data: middle)
+                }
+            }
+
+            if fileSize > Int64(chunkSize) {
+                let tailOffset = UInt64(max(fileSize - Int64(chunkSize), 0))
+                try file.seek(toOffset: tailOffset)
+                if let tail = try file.read(upToCount: chunkSize), !tail.isEmpty {
+                    hasher.update(data: tail)
+                }
+            }
+        } catch {
+            return nil
+        }
+
+        let digest = hasher.finalize().map { String(format: "%02x", $0) }.joined()
+        return "\(fileSize)-\(digest)"
     }
 
     nonisolated static func md5Hash(of path: String) -> String? {
@@ -541,11 +783,13 @@ class DuplicateEngine: ObservableObject {
         defer { try? file.close() }
         
         var hasher = Insecure.MD5()
-        let bufferSize = 1024 * 1024 // 1MB chunk size
+        let bufferSize = fullHashChunkSize // 1MB chunk size
         
         while true {
+            if Task.isCancelled { return nil }
             do {
                 guard let data = try file.read(upToCount: bufferSize) else { break }
+                if data.isEmpty { break }
                 hasher.update(data: data)
             } catch {
                 return nil
@@ -567,6 +811,14 @@ class DuplicateEngine: ObservableObject {
         // Keep first file, select all others for removal
         for fi in groups[gi].files.indices {
             groups[gi].files[fi].isSelected = fi > 0
+        }
+    }
+
+    func autoSelectAllDuplicates() {
+        for gi in groups.indices {
+            for fi in groups[gi].files.indices {
+                groups[gi].files[fi].isSelected = fi > 0
+            }
         }
     }
 

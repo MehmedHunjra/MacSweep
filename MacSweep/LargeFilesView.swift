@@ -8,6 +8,10 @@ struct LargeFilesView: View {
     @State private var showConfirm = false
     @State private var showResult  = false
     @State private var showReview  = false
+    @State private var scanTarget  = NSHomeDirectory()
+    @EnvironmentObject var navManager: NavigationManager
+
+    private let theme = SectionTheme.theme(for: .largeFiles)
 
     var largeFiles: [ScanItem] {
         scanEngine.scanItems
@@ -19,109 +23,36 @@ struct LargeFilesView: View {
         largeFiles.filter(\.isSelected).reduce(0) { $0 + $1.size }
     }
 
-    @State private var scanTarget = NSHomeDirectory()
-
     var body: some View {
         VStack(spacing: 0) {
-            if !scanEngine.isScanning && !scanEngine.scanComplete {
-                landingScreen
-            } else {
-                // Toolbar/Header when scanning or showing results
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "arrow.up.doc.fill")
-                                .font(.title2)
-                                .foregroundStyle(AppTheme.sectionGradient(.largeFiles))
-                            Text("Large Files")
-                                .font(.system(size: 20, weight: .bold, design: .rounded))
-                        }
-                    }
-                    Spacer()
-                    if scanEngine.scanComplete && !largeFiles.isEmpty {
-                        Button("Review") {
-                            showReview = true
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(Color.white.opacity(0.1))
-                        .cornerRadius(6)
-                    }
-                    
-                    if !scanEngine.isScanning {
-                        Button {
+            let showLanding = !scanEngine.isScanning && (!scanEngine.scanComplete || largeFiles.isEmpty)
+            if showLanding {
+                VStack(spacing: 0) {
+                    navHeader(isLanding: true)
+                    ToolLandingView(
+                        section: .largeFiles,
+                        subtitle: "Locate and remove massive files that are\ncluttering your storage.",
+                        actionLabel: "Scan",
+                        extraContent: AnyView(folderPicker),
+                        onAction: {
                             Task { await scanEngine.startScan(mode: .custom(path: scanTarget, categories: [.largeFiles])) }
-                        } label: {
-                            HStack(spacing: 6) {
-                                Image(systemName: "arrow.clockwise")
-                                Text("Rescan")
-                            }
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(AppTheme.sectionGradient(.largeFiles))
-                            .cornerRadius(6)
                         }
-                        .buttonStyle(.plain)
-                    }
+                    )
                 }
-                .padding(.horizontal, 24)
-                .padding(.vertical, 16)
-                .background(Color(NSColor.windowBackgroundColor))
-                
-                Divider()
-
-                if scanEngine.isScanning {
-                    AnimatedScanView(scanEngine: scanEngine)
-                } else if scanEngine.scanComplete && !largeFiles.isEmpty {
-                    VStack(spacing: 0) {
-                        HStack(spacing: 16) {
-                            SummaryPill(icon: "arrow.up.doc.fill", label: "Large Files", value: "\(largeFiles.count) files", color: Color(hex: "F857A6"))
-                            SummaryPill(icon: "checkmark.circle.fill", label: "Selected", value: "\(largeFiles.filter(\.isSelected).count) items · \(ByteCountFormatter.string(fromByteCount: selectedLargeSize, countStyle: .file))", color: AppTheme.success)
-                            Spacer()
-                            HStack(spacing: 6) {
-                                Button("All") {
-                                    for item in largeFiles where !item.isSelected { scanEngine.toggleItem(item.id) }
-                                }.buttonStyle(.bordered).controlSize(.small)
-                                Button("None") {
-                                    for item in largeFiles where item.isSelected { scanEngine.toggleItem(item.id) }
-                                }.buttonStyle(.bordered).controlSize(.small)
-                            }
-                            GradientButton(title: "Delete Selected", icon: "trash.fill", gradient: [AppTheme.danger, Color(hex: "FF5858")], disabled: selectedLargeSize == 0) { showConfirm = true }
-                        }
-                        .padding(.horizontal, 24)
-                        .padding(.vertical, 16)
-                        .background(Color(NSColor.windowBackgroundColor))
-
-                        Divider()
-
-                        ScrollView(showsIndicators: false) {
-                            VStack(spacing: 8) {
-                                ForEach(largeFiles) { item in
-                                    LargeFileRow(item: item, scanEngine: scanEngine)
-                                }
-                            }
-                            .padding(20)
-                        }
-                    }
-                } else if scanEngine.scanComplete {
-                    VStack(spacing: 16) {
-                        Spacer()
-                        Image(systemName: "checkmark.circle.fill").font(.system(size: 48)).foregroundColor(.green)
-                        Text("No Large Files Found").font(.title3.bold())
-                            .foregroundColor(.secondary)
-                        Button("Scan Another Folder") {
-                            scanEngine.scanComplete = false
-                        }
-                        .buttonStyle(.bordered)
-                        Spacer()
-                    }
+            } else if scanEngine.isScanning {
+                ToolScanningView(
+                    section: .largeFiles,
+                    currentPath: $scanEngine.currentPath,
+                    onStop: { scanEngine.cancelScan() }
+                )
+            } else {
+                VStack(spacing: 0) {
+                    navHeader(isLanding: false)
+                    resultsView
                 }
             }
         }
-        .background(Color(NSColor.controlBackgroundColor))
+        .background(DS.bg)
         .alert("Delete Selected Files?", isPresented: $showConfirm) {
             Button("Cancel", role: .cancel) {}
             Button("Delete", role: .destructive) {
@@ -130,95 +61,249 @@ struct LargeFilesView: View {
                     if cleanEngine.cleanedSize > 0 {
                         scanEngine.recordFreed(bytes: cleanEngine.cleanedSize, description: "Large Files cleanup")
                     }
-                    await scanEngine.startScan(mode: .categories([.largeFiles]))
+                    DS.playCleanComplete()
+                    await scanEngine.startScan(mode: .custom(path: scanTarget, categories: [.largeFiles]))
                     showResult = true
                 }
             }
         } message: {
             Text("This will permanently delete \(ByteCountFormatter.string(fromByteCount: selectedLargeSize, countStyle: .file)).")
         }
-        .sheet(isPresented: $showResult) { CleanResultSheet(cleanEngine: cleanEngine, scanEngine: scanEngine, isPresented: $showResult) }
+        .sheet(isPresented: $showResult) {
+            CleanResultSheet(cleanEngine: cleanEngine, scanEngine: scanEngine, isPresented: $showResult)
+        }
         .sheet(isPresented: $showReview) {
-            ReviewManagerSheet(
-                scanEngine: scanEngine,
-                cleanEngine: cleanEngine,
-                scope: .largeFiles
-            )
+            ReviewManagerSheet(scanEngine: scanEngine, cleanEngine: cleanEngine, scope: .largeFiles)
         }
     }
 
-    // MARK: - Landing
-    private var landingScreen: some View {
-        ZStack {
-            LinearGradient(
-                colors: [Color(hex: "1A0740"), Color(hex: "200952"), Color(hex: "2A0D60"), Color(hex: "1A0740")],
-                startPoint: .top, endPoint: .bottom
-            )
-
-            VStack(spacing: 0) {
-                Spacer(minLength: 30)
-
-                // 3D Glass Icon for Large Files
-                ZStack {
-                    RoundedRectangle(cornerRadius: 32)
-                        .fill(LinearGradient(colors: [Color(hex: "F857A6").opacity(0.6), Color(hex: "FF5858").opacity(0.4)], startPoint: .topLeading, endPoint: .bottomTrailing))
-                        .frame(width: 120, height: 120)
-                        .shadow(color: Color(hex: "F857A6").opacity(0.4), radius: 30, y: 8)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 32)
-                                .strokeBorder(Color.white.opacity(0.15), lineWidth: 1)
-                        )
-
-                    Image(systemName: "arrow.up.doc.fill")
-                        .font(.system(size: 50, weight: .semibold))
-                        .foregroundStyle(LinearGradient(colors: [.white, Color(hex: "FFEDBC")], startPoint: .topLeading, endPoint: .bottomTrailing))
-                }
-                .padding(.bottom, 28)
-
-                Text("Large & Old Files")
-                    .font(.system(size: 32, weight: .bold, design: .rounded))
-                    .foregroundColor(.white)
-                    .padding(.bottom, 8)
-
-                Text("Locate and remove massive files that are\ncluttering your storage.")
-                    .font(.system(size: 14))
-                    .foregroundColor(.white.opacity(0.5))
-                    .multilineTextAlignment(.center)
-                    .lineSpacing(3)
-                    .padding(.bottom, 28)
-
-                // Folder selector
-                Menu {
-                    Button { scanTarget = NSHomeDirectory() } label: { Label("Home Folder", systemImage: "house.fill") }
-                    Button { scanTarget = "/" } label: { Label("Macintosh HD", systemImage: "internaldrive.fill") }
-                    Divider()
-                    Button { selectCustomFolder() } label: { Label("Choose Folder…", systemImage: "folder.badge.plus") }
-                } label: {
-                    HStack(spacing: 10) {
-                        Image(systemName: scanTarget == "/" ? "internaldrive.fill" : "folder.fill")
-                            .foregroundColor(Color(hex: "F857A6"))
-                        Text(scanTargetName).font(.system(size: 14, weight: .medium)).foregroundColor(.white.opacity(0.85))
-                        Spacer()
-                        Image(systemName: "chevron.down").font(.system(size: 10, weight: .bold)).foregroundColor(.white.opacity(0.4))
-                    }
-                    .padding(.horizontal, 18).padding(.vertical, 12).frame(width: 260)
-                    .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.08)).overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.white.opacity(0.1), lineWidth: 1)))
-                }
-                .menuStyle(.borderlessButton)
-                .padding(.bottom, 36)
-
-                ToolPrimaryActionButton(
-                    title: "Scan",
-                    colors: [Color(hex: "F857A6"), Color(hex: "FF5858")],
-                    icon: "sparkles"
-                ) {
-                    Task { await scanEngine.startScan(mode: .custom(path: scanTarget, categories: [.largeFiles])) }
-                }
-
-                Spacer(minLength: 30)
+    // MARK: - Folder Picker
+    private var folderPicker: some View {
+        Menu {
+            Button { scanTarget = NSHomeDirectory() } label: {
+                Label("Home Folder", systemImage: "house.fill")
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            Button { scanTarget = "/" } label: {
+                Label("Macintosh HD", systemImage: "internaldrive.fill")
+            }
+            Divider()
+            Button { selectCustomFolder() } label: {
+                Label("Choose Folder…", systemImage: "folder.badge.plus")
+            }
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: scanTarget == "/" ? "internaldrive.fill" : "folder.fill")
+                    .foregroundColor(theme.glow)
+                Text(scanTargetName)
+                    .font(MSFont.body)
+                    .foregroundColor(DS.textPrimary)
+                Spacer()
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(DS.textMuted)
+            }
+            .padding(.horizontal, 18)
+            .padding(.vertical, 12)
+            .frame(width: 260)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(DS.bgElevated)
+                    .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(DS.borderMid, lineWidth: 1))
+            )
+        }
+        .menuStyle(.borderlessButton)
+    }
+
+    // MARK: - Navigation Header
+    func navHeader(isLanding: Bool) -> some View {
+        HStack(spacing: 16) {
+            HStack(spacing: 8) {
+                Button {
+                    if !isLanding {
+                        scanEngine.scanComplete = false
+                    } else {
+                        navManager.goBack()
+                    }
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor((isLanding && !navManager.canGoBack) ? DS.textMuted.opacity(0.5) : DS.textSecondary)
+                        .frame(width: 32, height: 32)
+                        .background((isLanding && !navManager.canGoBack) ? DS.bgElevated.opacity(0.5) : DS.bgElevated)
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .disabled(isLanding && !navManager.canGoBack)
+
+                Button {
+                    navManager.goForward()
+                } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(navManager.canGoForward ? DS.textSecondary : DS.textMuted.opacity(0.5))
+                        .frame(width: 32, height: 32)
+                        .background(navManager.canGoForward ? DS.bgElevated : DS.bgElevated.opacity(0.5))
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .disabled(!navManager.canGoForward)
+            }
+
+            if !isLanding {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(theme.linearGradient)
+                        .frame(width: 36, height: 36)
+                    Image(systemName: "arrow.up.doc.fill")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.white)
+                }
+                Text("Large Files")
+                    .font(MSFont.title2)
+                    .foregroundColor(DS.textPrimary)
+                
+                Spacer()
+                
+                if !largeFiles.isEmpty {
+                    Button("Review") { showReview = true }
+                        .font(MSFont.caption)
+                        .foregroundColor(DS.textSecondary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(DS.bgElevated)
+                        .clipShape(Capsule())
+                        .buttonStyle(.plain)
+                }
+            } else {
+                Spacer()
+            }
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 16)
+    }
+
+    // MARK: - Results
+    private var resultsView: some View {
+        VStack(spacing: 0) {
+            // Header bar removed here as it's now in navHeader
+            HStack(spacing: 12) {
+                Spacer()
+                Button {
+                    Task { await scanEngine.startScan(mode: .custom(path: scanTarget, categories: [.largeFiles])) }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.clockwise")
+                        Text("Rescan")
+                    }
+                    .font(MSFont.caption)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 7)
+                    .background(theme.linearGradient)
+                    .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
             .padding(.horizontal, 24)
+            .padding(.vertical, 14)
+            .background(DS.bgPanel)
+            .overlay(Rectangle().fill(DS.borderSubtle).frame(height: 1), alignment: .bottom)
+
+            if !largeFiles.isEmpty {
+                // Summary + actions bar
+                HStack(spacing: 14) {
+                    SummaryPill(
+                        icon: "arrow.up.doc.fill",
+                        label: "Large Files",
+                        value: "\(largeFiles.count) files",
+                        color: theme.glow
+                    )
+                    SummaryPill(
+                        icon: "checkmark.circle.fill",
+                        label: "Selected",
+                        value: "\(largeFiles.filter(\.isSelected).count) · \(ByteCountFormatter.string(fromByteCount: selectedLargeSize, countStyle: .file))",
+                        color: DS.success
+                    )
+                    Spacer()
+                    HStack(spacing: 8) {
+                        Button("All") {
+                            for item in largeFiles where !item.isSelected { scanEngine.toggleItem(item.id) }
+                        }
+                        .font(MSFont.caption)
+                        .foregroundColor(DS.textSecondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(DS.bgElevated)
+                        .clipShape(Capsule())
+                        .buttonStyle(.plain)
+
+                        Button("None") {
+                            for item in largeFiles where item.isSelected { scanEngine.toggleItem(item.id) }
+                        }
+                        .font(MSFont.caption)
+                        .foregroundColor(DS.textSecondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(DS.bgElevated)
+                        .clipShape(Capsule())
+                        .buttonStyle(.plain)
+                    }
+                    GradientButton(
+                        title: "Delete Selected",
+                        icon: "trash.fill",
+                        gradient: [DS.danger, DS.danger],
+                        disabled: selectedLargeSize == 0
+                    ) {
+                        showConfirm = true
+                    }
+                }
+                .padding(.horizontal, 24)
+                .padding(.vertical, 12)
+                .background(DS.bgPanel)
+                .overlay(Rectangle().fill(DS.borderSubtle).frame(height: 1), alignment: .bottom)
+
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 6) {
+                        ForEach(largeFiles) { item in
+                            LargeFileRow(item: item, scanEngine: scanEngine)
+                        }
+                    }
+                    .padding(20)
+                }
+                .background(DS.bg)
+            } else {
+                // Empty state
+                VStack(spacing: 16) {
+                    Spacer()
+                    ZStack {
+                        Circle()
+                            .fill(DS.success.opacity(0.12))
+                            .frame(width: 80, height: 80)
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 40))
+                            .foregroundColor(DS.success)
+                    }
+                    Text("No Large Files Found")
+                        .font(MSFont.title2)
+                        .foregroundColor(DS.textPrimary)
+                    Text("Your selected folder is clear of large files.")
+                        .font(MSFont.body)
+                        .foregroundColor(DS.textSecondary)
+                    Button("Scan Another Folder") {
+                        scanEngine.scanComplete = false
+                    }
+                    .font(MSFont.headline)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 10)
+                    .background(theme.linearGradient)
+                    .clipShape(Capsule())
+                    .buttonStyle(.plain)
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity)
+                .background(DS.bg)
+            }
         }
     }
 
@@ -236,6 +321,8 @@ struct LargeFilesView: View {
         }
     }
 }
+
+// MARK: - Large File Row
 
 struct LargeFileRow: View {
     let item: ScanItem
@@ -258,36 +345,70 @@ struct LargeFileRow: View {
     var fileColor: Color {
         let ext = (item.name as NSString).pathExtension.lowercased()
         switch ext {
-        case "mp4", "mov", "avi", "mkv": return Color(hex: "BD10E0")
-        case "dmg", "iso", "zip", "gz": return Color(hex: "F5A623")
-        case "app": return Color(hex: "667EEA")
-        default: return Color(hex: "9B9B9B")
+        case "mp4", "mov", "avi", "mkv": return Color(hex: "9B4DFF")
+        case "dmg", "iso", "zip", "gz", "tar": return DS.warning
+        case "app": return Color(hex: "3A70E0")
+        case "mp3", "wav", "m4a", "aac": return DS.brandGreen
+        case "jpg", "png", "heic", "tiff": return Color(hex: "D459A0")
+        case "pdf": return DS.danger
+        default: return DS.textMuted
         }
     }
 
     var body: some View {
         HStack(spacing: 14) {
-            Toggle("", isOn: Binding(get: { item.isSelected }, set: { _ in scanEngine.toggleItem(item.id) }))
-                .labelsHidden().toggleStyle(.checkbox)
+            Toggle("", isOn: Binding(
+                get: { item.isSelected },
+                set: { _ in scanEngine.toggleItem(item.id) }
+            ))
+            .labelsHidden()
+            .toggleStyle(.checkbox)
 
             ZStack {
-                RoundedRectangle(cornerRadius: 8).fill(fileColor.opacity(0.15)).frame(width: 40, height: 40)
-                Image(systemName: fileIcon).font(.system(size: 18)).foregroundColor(fileColor)
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(fileColor.opacity(0.15))
+                    .frame(width: 40, height: 40)
+                Image(systemName: fileIcon)
+                    .font(.system(size: 18))
+                    .foregroundColor(fileColor)
             }
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(item.name).font(.system(size: 13, weight: .medium)).lineLimit(1)
-                Text(item.path).font(.caption2).foregroundColor(.secondary).lineLimit(1).truncationMode(.middle)
+                Text(item.name)
+                    .font(MSFont.headline)
+                    .foregroundColor(DS.textPrimary)
+                    .lineLimit(1)
+                Text(item.path)
+                    .font(MSFont.mono)
+                    .foregroundColor(DS.textMuted)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
             }
             Spacer()
-            Text(item.sizeFormatted).font(.system(size: 13, weight: .bold, design: .rounded)).foregroundColor(Color(hex: "F857A6"))
+            Text(item.sizeFormatted)
+                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .foregroundColor(SectionTheme.theme(for: .largeFiles).glow)
 
-            Button { NSWorkspace.shared.activateFileViewerSelecting([item.url]) } label: {
-                Image(systemName: "arrow.right.circle").foregroundColor(.secondary)
-            }.buttonStyle(.plain)
+            Button {
+                NSWorkspace.shared.activateFileViewerSelecting([item.url])
+            } label: {
+                Image(systemName: "arrow.right.circle")
+                    .foregroundColor(DS.textMuted)
+            }
+            .buttonStyle(.plain)
         }
         .padding(12)
-        .background(RoundedRectangle(cornerRadius: 10).fill(Color(NSColor.windowBackgroundColor)).shadow(color: .black.opacity(isHovered ? 0.06 : 0.02), radius: isHovered ? 6 : 3, y: 1))
-        .onHover { hovering in isHovered = hovering }
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(isHovered ? DS.bgElevated : DS.bgPanel)
+                .animation(Motion.fast, value: isHovered)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .strokeBorder(DS.borderSubtle, lineWidth: 1)
+        )
+        .onHover { hovering in
+            withAnimation(Motion.fast) { isHovered = hovering }
+        }
     }
 }

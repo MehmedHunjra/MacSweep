@@ -6,6 +6,8 @@ struct MacSweepApp: App {
     @StateObject private var scanEngine  = ScanEngine()
     @StateObject private var cleanEngine = CleanEngine()
     @StateObject private var settings    = AppSettings()
+    @StateObject private var updateEngine = AppUpdateEngine()
+    @StateObject private var autoPolicyEngine = AutoPolicyEngine()
     @StateObject private var wifiLocationPermission = WiFiLocationPermissionManager()
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
@@ -13,20 +15,28 @@ struct MacSweepApp: App {
     var body: some Scene {
         WindowGroup {
             if hasCompletedOnboarding {
-                ContentView(scanEngine: scanEngine, cleanEngine: cleanEngine, settings: settings)
-                    .frame(minWidth: 1100, minHeight: 720)
+                ContentView(
+                    scanEngine: scanEngine,
+                    cleanEngine: cleanEngine,
+                    settings: settings,
+                    updateEngine: updateEngine
+                )
+                    .frame(minWidth: 1240, minHeight: 900)
                     .onAppear {
                         // Apply saved dock icon setting
                         if !settings.showDockIcon {
                             NSApp.setActivationPolicy(.accessory)
                         }
+                        autoPolicyEngine.configure(
+                            scanEngine: scanEngine,
+                            cleanEngine: cleanEngine,
+                            settings: settings
+                        )
+                        updateEngine.configure(settings: settings)
                         wifiLocationPermission.requestIfNeeded()
 
-                        // Optional startup behavior for login-item launches:
-                        // keep app in menu bar only when not launched interactively.
-                        if settings.launchAtLogin,
-                           settings.launchAtLoginMenuBarOnly,
-                           !NSApp.isActive {
+                        // If launched at login in menu-bar-only mode, hide main window immediately.
+                        if AppDelegate.launchedAsMenuBarOnly {
                             NSApp.setActivationPolicy(.accessory)
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                                 for window in NSApp.windows where window.canBecomeMain {
@@ -43,6 +53,7 @@ struct MacSweepApp: App {
         }
         .windowStyle(.hiddenTitleBar)
         .windowToolbarStyle(.unified(showsTitle: false))
+        .defaultSize(width: 1380, height: 920)
         .commands {
             CommandGroup(replacing: .newItem) {}
             // Replace "Quit" with "Hide" so ⌘Q hides window instead of quitting
@@ -71,7 +82,12 @@ struct MacSweepApp: App {
 
         // Menu Bar — always visible, even when main window is closed/quit
         MenuBarExtra {
-            MenuBarView(scanEngine: scanEngine, cleanEngine: cleanEngine, settings: settings)
+            MenuBarView(
+                scanEngine: scanEngine,
+                cleanEngine: cleanEngine,
+                settings: settings,
+                updateEngine: updateEngine
+            )
         } label: {
             MenuBarLabel(scanEngine: scanEngine, settings: settings)
         }
@@ -79,10 +95,11 @@ struct MacSweepApp: App {
     }
 
     private func hideApp() {
-        // Hide only the main windows; avoid app-level hide/accessory transitions.
+        // Hide windows and remove dock icon; menu bar stays alive.
         for window in NSApp.windows where window.canBecomeMain {
             window.orderOut(nil)
         }
+        NSApp.setActivationPolicy(.accessory)
         NSApp.deactivate()
     }
 
@@ -91,13 +108,63 @@ struct MacSweepApp: App {
 // MARK: - App Delegate
 class AppDelegate: NSObject, NSApplicationDelegate {
     static var forceQuit = false
+    /// Set to `true` during `didFinishLaunching` when the app was launched by a login-item
+    /// and the user has "Launch as Menu Bar Only" enabled.
+    static var launchedAsMenuBarOnly = false
     static weak var mainWindow: NSWindow?
     private let mainWindowIdentifier = "MacSweepMainWindow"
+    static let preferredMainWindowSize = NSSize(width: 1380, height: 920)
+    static let minimumMainWindowSize = NSSize(width: 1240, height: 820)
+    private var allowSystemTermination = false
+    private var workspaceObservers: [NSObjectProtocol] = []
+
+    static func ensureMainWindowGeometry(_ window: NSWindow, forcePreferred: Bool = false) {
+        window.minSize = minimumMainWindowSize
+
+        guard let screen = window.screen ?? NSScreen.main else { return }
+        let visible = screen.visibleFrame
+
+        let targetWidth = max(min(preferredMainWindowSize.width, visible.width - 24), minimumMainWindowSize.width)
+        let targetHeight = max(min(preferredMainWindowSize.height, visible.height - 24), minimumMainWindowSize.height)
+
+        let needsResize = forcePreferred
+            || window.frame.width < minimumMainWindowSize.width
+            || window.frame.height < minimumMainWindowSize.height
+
+        guard needsResize else { return }
+
+        let targetRect = NSRect(
+            x: visible.midX - targetWidth / 2,
+            y: visible.midY - targetHeight / 2,
+            width: targetWidth,
+            height: targetHeight
+        )
+        window.setFrame(targetRect, display: true, animate: false)
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        registerSystemTerminationObserver()
+
+        // Detect login-item launch: at this earliest point the app is not yet active
+        // when launched automatically by the system login-item mechanism.
+        let ud = UserDefaults.standard
+        let launchAtLogin = ud.object(forKey: "launchAtLogin") as? Bool ?? true
+        let menuBarOnly   = ud.object(forKey: "launchAtLoginMenuBarOnly") as? Bool ?? true
+        if launchAtLogin && menuBarOnly && !NSApp.isActive {
+            AppDelegate.launchedAsMenuBarOnly = true
+            NSApp.setActivationPolicy(.accessory)
+            NSLog("[MacSweep] Login-item launch detected → menu bar only mode")
+        }
+
+        let debugSession = isDebuggerAttached()
         let bundleID = Bundle.main.bundleIdentifier ?? "com.mehmed.MacSweep"
         let runningInstances = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
         if runningInstances.count > 1 {
+            // During Xcode debug runs, allow launching this instance without enforcing single-instance.
+            if debugSession {
+                NSLog("[MacSweep] Debug session detected; skipping single-instance enforcement")
+                return
+            }
             for app in runningInstances where app != NSRunningApplication.current {
                 app.activate(options: [.activateAllWindows])
             }
@@ -108,13 +175,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        if AppDelegate.forceQuit { return .terminateNow }
+        // Only allow FULL termination for:
+        //   1. Explicit "Quit MacSweep Completely" (⇧⌘Q) which sets forceQuit = true
+        //   2. System shutdown/restart (willPowerOffNotification sets allowSystemTermination)
+        // Everything else (Dock "Quit", ⌘Q, window close) just hides windows → menu bar stays alive.
+        if AppDelegate.forceQuit || allowSystemTermination {
+            return .terminateNow
+        }
+
+        // Hide all main windows AND remove dock icon. Menu bar stays alive.
         DispatchQueue.main.async {
             for window in NSApp.windows where window.canBecomeMain {
                 window.orderOut(nil)
             }
+            NSApp.setActivationPolicy(.accessory)
             NSApp.deactivate()
         }
+
         return .terminateCancel
     }
 
@@ -125,6 +202,41 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         return false
+    }
+
+    private func registerSystemTerminationObserver() {
+        let center = NSWorkspace.shared.notificationCenter
+
+        let powerOffObserver = center.addObserver(
+            forName: NSWorkspace.willPowerOffNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.allowSystemTermination = true
+            AppDelegate.forceQuit = true
+        }
+        workspaceObservers.append(powerOffObserver)
+
+        // Also handle system sleep so we never block a sleep transition.
+        let sleepObserver = center.addObserver(
+            forName: NSWorkspace.willSleepNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.allowSystemTermination = true
+        }
+        workspaceObservers.append(sleepObserver)
+    }
+
+    private func isDebuggerAttached() -> Bool {
+        var info = kinfo_proc()
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()]
+        var size = MemoryLayout<kinfo_proc>.size
+        let result = mib.withUnsafeMutableBufferPointer { pointer in
+            sysctl(pointer.baseAddress, u_int(pointer.count), &info, &size, nil, 0)
+        }
+        guard result == 0 else { return false }
+        return (info.kp_proc.p_flag & P_TRACED) != 0
     }
 
     // ── The single entry-point for showing the main window ──────────
@@ -166,6 +278,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if window.isMiniaturized {
                 window.deminiaturize(nil)
             }
+            AppDelegate.ensureMainWindowGeometry(window, forcePreferred: true)
             window.collectionBehavior.insert(.moveToActiveSpace)
             window.makeKeyAndOrderFront(nil)
             window.orderFrontRegardless()
@@ -181,6 +294,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if window.isMiniaturized {
                 window.deminiaturize(nil)
             }
+            AppDelegate.ensureMainWindowGeometry(window, forcePreferred: true)
             window.makeKeyAndOrderFront(nil)
             window.orderFrontRegardless()
             NSApp.activate(ignoringOtherApps: true)
@@ -250,22 +364,28 @@ struct MenuBarLabel: View {
         return tokens
     }
     private var metricsText: String { metricTokens.joined(separator: " ") }
-    private var iconHeight: CGFloat { 8.0 }
-    private var iconColor: Color { Color(hex: "D2D4D8") }
+    private var iconHeight: CGFloat { 16.0 }
+    private var maxMetricsWidth: CGFloat {
+        settings.menuBarShowNetwork ? 86 : 64
+    }
 
     var body: some View {
         HStack(spacing: 4) {
-            // MacSweep menu bar icon (grey, native size, no blur)
-            Image("MenuBarIcon")
-                .renderingMode(.template)
-                .foregroundStyle(Color(hex: "D2D4D8"))
-
             Text(metricsText)
                 .font(.system(size: 9, weight: .semibold, design: .monospaced))
                 .foregroundColor(displayCPUPercent > 80 ? .red : .primary)
                 .lineLimit(1)
+                .truncationMode(.head)
+                .frame(maxWidth: maxMetricsWidth, alignment: .trailing)
+
+            // Keep icon at right edge; values grow/collapse to the left.
+            Image("MenuBarIcon")
+                .renderingMode(.original)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(height: iconHeight)
         }
-        .fixedSize(horizontal: true, vertical: false)
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     private func formatRate(_ bytesPerSecond: Int64) -> String {

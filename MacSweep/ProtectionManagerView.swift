@@ -10,29 +10,35 @@ struct ProtectionManagerView: View {
     @State private var showConfirm = false
     @State private var showResult = false
     @State private var resultMessage = ""
+    @EnvironmentObject var navManager: NavigationManager
 
     var body: some View {
         VStack(spacing: 0) {
             if !engine.isScanning && !engine.hasScanned {
-                landingScreen
-            } else {
-                protHeader
-                Divider()
-                HStack(spacing: 0) {
-                    protGroupList
-                    Divider()
-                    if let kind = selectedGroup,
-                       let group = engine.groups.first(where: { $0.kind == kind }) {
-                        protItemList(group: group)
-                    } else {
-                        emptyState
-                    }
+                VStack(spacing: 0) {
+                    navHeader(isLanding: true)
+                    landingScreen
                 }
-                Divider()
-                protFooter
+            } else {
+                VStack(spacing: 0) {
+                    navHeader(isLanding: false)
+                    Divider()
+                    HStack(spacing: 0) {
+                        protGroupList
+                        Divider()
+                        if let kind = selectedGroup,
+                           let group = engine.groups.first(where: { $0.kind == kind }) {
+                            protItemList(group: group)
+                        } else {
+                            emptyState
+                        }
+                    }
+                    Divider()
+                    protFooter
+                }
             }
         }
-        .background(Color(NSColor.controlBackgroundColor))
+        .background(DS.bg)
         .alert("Cleanup Complete", isPresented: $showResult) {
             Button("OK") { engine.scanAll() }
         } message: {
@@ -42,100 +48,106 @@ struct ProtectionManagerView: View {
 
     // MARK: - Landing
     private var landingScreen: some View {
-        ZStack {
-            LinearGradient(
-                colors: [Color(hex: "06122C"), Color(hex: "0A244D"), Color(hex: "0F3C7E"), Color(hex: "06122C")],
-                startPoint: .top, endPoint: .bottom
-            )
-
-            VStack(spacing: 0) {
-                Spacer()
-
-                // 3D Glass Icon for Protection
-                ZStack {
-                    RoundedRectangle(cornerRadius: 32)
-                        .fill(LinearGradient(colors: [Color(hex: "0F2027").opacity(0.6), Color(hex: "2C5364").opacity(0.4)], startPoint: .topLeading, endPoint: .bottomTrailing))
-                        .frame(width: 120, height: 120)
-                        .shadow(color: Color(hex: "0F2027").opacity(0.4), radius: 30, y: 8)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 32)
-                                .strokeBorder(Color.white.opacity(0.15), lineWidth: 1)
-                        )
-
-                    Image(systemName: "lock.shield")
-                        .font(.system(size: 50, weight: .semibold))
-                        .foregroundStyle(LinearGradient(colors: [.white, Color(hex: "B2EBF2")], startPoint: .topLeading, endPoint: .bottomTrailing))
-                }
-                .padding(.bottom, 28)
-
-                Text("Privacy & Protection")
-                    .font(.system(size: 32, weight: .bold, design: .rounded))
-                    .foregroundColor(.white)
-                    .padding(.bottom, 8)
-
-                Text("Scan all browsers, privacy traces, recent activity,\ncrash reports, and system data in one click.")
-                    .font(.system(size: 14))
-                    .foregroundColor(.white.opacity(0.5))
-                    .multilineTextAlignment(.center)
-                    .lineSpacing(3)
-                    .padding(.bottom, 48)
-
-                ToolPrimaryActionButton(
-                    title: "Scan",
-                    colors: [Color(hex: "0F2027"), Color(hex: "2C5364")],
-                    icon: "sparkles"
-                ) {
-                    engine.hasScanned = true
-                    engine.scanAll()
-                }
-
-                Spacer()
+        ToolLandingView(
+            section: .protection,
+            subtitle: "Scan all browsers, privacy traces, recent activity,\ncrash reports, and system data in one click.",
+            actionLabel: "Scan",
+            onAction: {
+                engine.hasScanned = true
+                engine.scanAll()
             }
-        }
+        )
     }
 
-    // MARK: - Header
-    var protHeader: some View {
+    // MARK: - Navigation Header
+    func navHeader(isLanding: Bool) -> some View {
         HStack(spacing: 16) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(LinearGradient(colors: [Color(hex: "0F2027"), Color(hex: "2C5364")],
-                                         startPoint: .topLeading, endPoint: .bottomTrailing))
-                    .frame(width: 44, height: 44)
-                Image(systemName: "lock.shield")
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundColor(.white)
+            HStack(spacing: 8) {
+                Button {
+                    if !isLanding {
+                        engine.hasScanned = false
+                    } else {
+                        navManager.goBack()
+                    }
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor((isLanding && !navManager.canGoBack) ? DS.textMuted.opacity(0.5) : DS.textSecondary)
+                        .frame(width: 32, height: 32)
+                        .background((isLanding && !navManager.canGoBack) ? DS.bgElevated.opacity(0.5) : DS.bgElevated)
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .disabled(isLanding && !navManager.canGoBack)
+
+                Button {
+                    navManager.goForward()
+                } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(navManager.canGoForward ? DS.textSecondary : DS.textMuted.opacity(0.5))
+                        .frame(width: 32, height: 32)
+                        .background(navManager.canGoForward ? DS.bgElevated : DS.bgElevated.opacity(0.5))
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .disabled(!navManager.canGoForward)
             }
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Privacy & Protection")
-                    .font(.system(size: 20, weight: .bold, design: .rounded))
-                Text("Browsers, privacy data, activity traces & crash reports")
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
-            }
-            Spacer()
-            if engine.isScanning {
-                HStack(spacing: 8) {
-                    ProgressView().scaleEffect(0.7)
-                    Text("Scanning…")
-                        .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+
+            if !isLanding {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(LinearGradient(colors: [Color(hex: "0F2027"), Color(hex: "2C5364")],
+                                             startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .frame(width: 44, height: 44)
+                    Image(systemName: "lock.shield")
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundColor(.white)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Privacy & Protection")
+                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                        .foregroundColor(DS.textPrimary)
+                    Text("Browsers, activity traces & crash reports")
+                        .font(.system(size: 11))
+                        .foregroundColor(DS.textMuted)
+                }
+                
+                Spacer()
+                
+                if engine.isScanning {
+                    HStack(spacing: 8) {
+                        ProgressView().scaleEffect(0.7)
+                        Text("Scanning…")
+                            .font(.system(size: 12))
+                            .foregroundColor(DS.textMuted)
+                    }
+                } else {
+                    Button {
+                        engine.scanAll()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.clockwise")
+                            Text("Rescan")
+                        }
+                        .font(MSFont.caption)
+                        .foregroundColor(DS.textSecondary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(DS.bgElevated)
+                        .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
                 }
             } else {
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text(ByteCountFormatter.string(fromByteCount: engine.totalSize, countStyle: .file))
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
-                        .foregroundColor(Color(hex: "2C5364"))
-                    Text("privacy traces found")
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
-                }
+                Spacer()
             }
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 16)
     }
 
+    // MARK: - Header
     // MARK: - Group List
     var protGroupList: some View {
         ScrollView(showsIndicators: false) {
@@ -290,7 +302,7 @@ struct ProtectionManagerView: View {
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("This will permanently delete selected browser history, cookies, caches, and other privacy-sensitive data.")
+                Text("Selected traces are moved to Trash when possible, then securely removed only if Trash move is unavailable.")
             }
         }
         .padding(.horizontal, 20)
@@ -447,6 +459,15 @@ class ProtectionEngine: ObservableObject {
     private let fm = FileManager.default
     private var home: String { fm.homeDirectoryForCurrentUser.path }
 
+    private func removeItemSafely(atPath path: String) throws {
+        let url = URL(fileURLWithPath: path)
+        do {
+            try fm.trashItem(at: url, resultingItemURL: nil)
+        } catch {
+            try fm.removeItem(at: url)
+        }
+    }
+
     func scanAll() {
         isScanning = true
         groups = ProtectionGroup.Kind.allCases.map { kind in
@@ -490,12 +511,20 @@ class ProtectionEngine: ObservableObject {
     func clearSelected() -> Int64 {
         var total: Int64 = 0
         for gi in groups.indices {
-            for item in groups[gi].items where item.isSelected {
+            var remaining: [ProtectionItem] = []
+            for item in groups[gi].items {
+                guard item.isSelected else {
+                    remaining.append(item)
+                    continue
+                }
                 do {
-                    try fm.removeItem(atPath: item.path)
+                    try removeItemSafely(atPath: item.path)
                     total += item.size
-                } catch {}
+                } catch {
+                    remaining.append(item)
+                }
             }
+            groups[gi].items = remaining
         }
         return total
     }
@@ -671,7 +700,10 @@ class ProtectionEngine: ObservableObject {
         let fm = FileManager.default
         var items: [ProtectionItem] = []
         for def in defs {
-            guard fm.fileExists(atPath: def.path) else { continue }
+            // Check both existence and readability to avoid triggering macOS
+            // permission prompts for protected directories (Photos, Music, etc.).
+            guard fm.fileExists(atPath: def.path),
+                  fm.isReadableFile(atPath: def.path) else { continue }
             let size = ScanEngine.calcSize(path: def.path)
             guard size > 0 else { continue }
             items.append(ProtectionItem(
@@ -741,7 +773,7 @@ struct ProtectionGroup: Identifiable {
         case .photos:   return [Color(hex: "00C853"), Color(hex: "64DD17")]
         case .privacy:  return [Color(hex: "FF416C"), Color(hex: "FF4B2B")]
         case .system:   return [Color(hex: "0F2027"), Color(hex: "203A43")]
-        case .crashes:  return [Color(hex: "FF5858"), Color(hex: "D0021B")]
+        case .crashes:  return [DS.danger, Color(hex: "D0021B")]
         }
     }
 

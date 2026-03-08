@@ -3,11 +3,14 @@ import SwiftUI
 struct PrivacyView: View {
     @ObservedObject var scanEngine:  ScanEngine
     @ObservedObject var cleanEngine: CleanEngine
-    @State private var showConfirm = false
-    @State private var showResult  = false
-    @State private var isScanning  = false
+    @State private var showConfirm  = false
+    @State private var showResult   = false
+    @State private var isScanning   = false
     @State private var privacyItems: [PrivacyItem] = []
-    @State private var scanDone = false
+    @State private var scanDone     = false
+    @EnvironmentObject var navManager: NavigationManager
+
+    private let theme = SectionTheme.theme(for: .privacy)
 
     var selectedSize: Int64 {
         privacyItems.filter(\.isSelected).reduce(0) { $0 + $1.size }
@@ -16,171 +19,191 @@ struct PrivacyView: View {
     var body: some View {
         VStack(spacing: 0) {
             if isScanning {
-                VStack(spacing: 20) {
-                    Spacer()
-                    ProgressView()
-                        .scaleEffect(1.5)
-                    Text("Scanning for privacy-sensitive data...")
-                        .font(.headline)
-                    Spacer()
-                }
+                scanningView
             } else if scanDone {
                 VStack(spacing: 0) {
-                    // Header (Compact for results)
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack(spacing: 8) {
-                                Image(systemName: "hand.raised.fill")
-                                    .font(.title2)
-                                    .foregroundStyle(AppTheme.sectionGradient(.privacy))
-                                Text("Privacy")
-                                    .font(.system(size: 24, weight: .bold, design: .rounded))
-                            }
-                            Text("Protect your digital footprint by clearing sensitive data")
-                                .foregroundColor(.secondary)
-                                .font(.subheadline)
-                        }
-                        Spacer()
-                        GradientButton(
-                            title: "Rescan",
-                            icon: "arrow.clockwise",
-                            gradient: AppSection.privacy.gradient,
-                            disabled: isScanning
-                        ) {
-                            scanPrivacy()
-                        }
-                    }
-                    .padding(24)
-
-                    Divider()
-
-                    // Summary
-                    HStack(spacing: 16) {
-                        SummaryPill(
-                            icon: "hand.raised.fill",
-                            label: "Privacy Data",
-                            value: "\(privacyItems.filter(\.isSelected).count) items · \(ByteCountFormatter.string(fromByteCount: privacyItems.reduce(0) { $0 + $1.size }, countStyle: .file))",
-                            color: Color(hex: "FF416C")
-                        )
-                        Spacer()
-                        HStack(spacing: 6) {
-                            Button("All") {
-                                for i in privacyItems.indices { privacyItems[i].isSelected = true }
-                            }.buttonStyle(.bordered).controlSize(.small)
-                            Button("None") {
-                                for i in privacyItems.indices { privacyItems[i].isSelected = false }
-                            }.buttonStyle(.bordered).controlSize(.small)
-                        }
-                        GradientButton(
-                            title: "Clean",
-                            icon: "trash.fill",
-                            gradient: [AppTheme.danger, Color(hex: "FF5858")],
-                            disabled: selectedSize == 0
-                        ) {
-                            showConfirm = true
-                        }
-                    }
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 16)
-                    .background(Color(NSColor.windowBackgroundColor))
-
-                    Divider()
-
-                    ScrollView(showsIndicators: false) {
-                        VStack(spacing: 10) {
-                            ForEach(Array(privacyItems.enumerated()), id: \.element.id) { index, item in
-                                PrivacyRow(item: $privacyItems[index])
-                            }
-                        }
-                        .padding(20)
-                    }
+                    navHeader(isLanding: false)
+                    resultsView
                 }
             } else {
-                landingScreen
+                VStack(spacing: 0) {
+                    navHeader(isLanding: true)
+                    ToolLandingView(
+                        section: .privacy,
+                        subtitle: "Protect your digital footprint by clearing sensitive\ndata, browser history, and activity traces.",
+                        actionLabel: "Scan",
+                        onAction: { scanPrivacy() }
+                    )
+                }
             }
         }
-        .background(Color(NSColor.controlBackgroundColor))
+        .background(DS.bg)
         .alert("Clear Privacy Data?", isPresented: $showConfirm) {
             Button("Cancel", role: .cancel) {}
-            Button("Clear", role: .destructive) {
-                clearPrivacyData()
-            }
+            Button("Clear", role: .destructive) { clearPrivacyData() }
         } message: {
             Text("This will clear \(ByteCountFormatter.string(fromByteCount: selectedSize, countStyle: .file)) of privacy-sensitive data.")
         }
     }
 
-    // MARK: - Landing
-    private var landingScreen: some View {
-        ZStack {
-            LinearGradient(
-                colors: [Color(hex: "06122C"), Color(hex: "0A244D"), Color(hex: "0F3C7E"), Color(hex: "06122C")],
-                startPoint: .top, endPoint: .bottom
-            )
+    // MARK: - Scanning View
+    private var scanningView: some View {
+        ToolScanningView(
+            section: .privacy,
+            scanningTitle: "Scanning for privacy-sensitive data...",
+            currentPath: .constant("Checking browser history, cookies, and logs..."),
+            onStop: { isScanning = false }
+        )
+    }
 
-            VStack(spacing: 0) {
-                Spacer(minLength: 36)
-
-                // 3D Glass Icon for Privacy
-                ZStack {
-                    RoundedRectangle(cornerRadius: 32)
-                        .fill(LinearGradient(colors: [Color(hex: "FF416C").opacity(0.6), Color(hex: "FF4B2B").opacity(0.4)], startPoint: .topLeading, endPoint: .bottomTrailing))
-                        .frame(width: 120, height: 120)
-                        .shadow(color: Color(hex: "FF416C").opacity(0.4), radius: 30, y: 8)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 32)
-                                .strokeBorder(Color.white.opacity(0.15), lineWidth: 1)
-                        )
-
-                    Image(systemName: "hand.raised.fill")
-                        .font(.system(size: 50, weight: .semibold))
-                        .foregroundStyle(LinearGradient(colors: [.white, Color(hex: "FFB2C5")], startPoint: .topLeading, endPoint: .bottomTrailing))
+    // MARK: - Navigation Header
+    func navHeader(isLanding: Bool) -> some View {
+        HStack(spacing: 16) {
+            HStack(spacing: 8) {
+                Button {
+                    if !isLanding {
+                        scanDone = false
+                    } else {
+                        navManager.goBack()
+                    }
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor((isLanding && !navManager.canGoBack) ? DS.textMuted.opacity(0.5) : DS.textSecondary)
+                        .frame(width: 32, height: 32)
+                        .background((isLanding && !navManager.canGoBack) ? DS.bgElevated.opacity(0.5) : DS.bgElevated)
+                        .clipShape(Circle())
                 }
-                .padding(.bottom, 28)
+                .buttonStyle(.plain)
+                .disabled(isLanding && !navManager.canGoBack)
 
-                Text("Privacy")
-                    .font(.system(size: 32, weight: .bold, design: .rounded))
-                    .foregroundColor(.white)
-                    .padding(.bottom, 8)
-
-                Text("Protect your digital footprint by clearing sensitive data,\nbrowser history, and activity traces.")
-                    .font(.system(size: 14))
-                    .foregroundColor(.white.opacity(0.5))
-                    .multilineTextAlignment(.center)
-                    .lineSpacing(3)
-                    .padding(.bottom, 48)
-
-                ToolPrimaryActionButton(
-                    title: "Scan",
-                    colors: [Color(hex: "FF416C"), Color(hex: "FF4B2B")],
-                    icon: "sparkles"
-                ) {
-                    scanPrivacy()
+                Button {
+                    navManager.goForward()
+                } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(navManager.canGoForward ? DS.textSecondary : DS.textMuted.opacity(0.5))
+                        .frame(width: 32, height: 32)
+                        .background(navManager.canGoForward ? DS.bgElevated : DS.bgElevated.opacity(0.5))
+                        .clipShape(Circle())
                 }
-
-                Spacer(minLength: 36)
+                .buttonStyle(.plain)
+                .disabled(!navManager.canGoForward)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            if !isLanding {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(theme.linearGradient)
+                        .frame(width: 36, height: 36)
+                    Image(systemName: "hand.raised.fill")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.white)
+                }
+                Text("Privacy")
+                    .font(MSFont.title2)
+                    .foregroundColor(DS.textPrimary)
+                
+                Spacer()
+                
+                Button {
+                    scanPrivacy()
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.clockwise")
+                        Text("Rescan")
+                    }
+                    .font(MSFont.caption)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 7)
+                    .background(theme.linearGradient)
+                    .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .disabled(isScanning)
+            } else {
+                Spacer()
+            }
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 16)
+    }
+
+    // MARK: - Results View
+    private var resultsView: some View {
+        VStack(spacing: 0) {
+            // Footer bar
+            HStack(spacing: 12) {
+                HStack(spacing: 8) {
+                    Button("All") {
+                        for i in privacyItems.indices { privacyItems[i].isSelected = true }
+                    }
+                    .font(MSFont.caption)
+                    .foregroundColor(DS.textSecondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(DS.bgElevated)
+                    .clipShape(Capsule())
+                    .buttonStyle(.plain)
+
+                    Button("None") {
+                        for i in privacyItems.indices { privacyItems[i].isSelected = false }
+                    }
+                    .font(MSFont.caption)
+                    .foregroundColor(DS.textSecondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(DS.bgElevated)
+                    .clipShape(Capsule())
+                    .buttonStyle(.plain)
+                }
+
+                Spacer()
+
+                GradientButton(
+                    title: "Clean",
+                    icon: "trash.fill",
+                    gradient: [DS.danger, DS.danger],
+                    disabled: selectedSize == 0
+                ) {
+                    showConfirm = true
+                }
+            }
             .padding(.horizontal, 24)
+            .padding(.vertical, 12)
+            .background(DS.bgPanel)
+            .overlay(Rectangle().fill(DS.borderSubtle).frame(height: 1), alignment: .bottom)
+
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 8) {
+                    ForEach(Array(privacyItems.enumerated()), id: \.element.id) { index, _ in
+                        PrivacyRow(item: $privacyItems[index])
+                    }
+                }
+                .padding(20)
+            }
+            .background(DS.bg)
         }
     }
 
     private func scanPrivacy() {
         isScanning = true
+        scanDone = false
         privacyItems = []
 
         Task {
             let home = FileManager.default.homeDirectoryForCurrentUser.path
             let paths: [(String, String, String, Color)] = [
-                ("Recent Items", "\(home)/Library/Application Support/com.apple.sharedfilelist", "clock.fill", Color(hex: "FF416C")),
+                ("Recent Items", "\(home)/Library/Application Support/com.apple.sharedfilelist", "clock.fill", DS.danger),
                 ("Safari History", "\(home)/Library/Safari/History.db", "safari.fill", Color(hex: "4A90D9")),
-                ("Safari Downloads", "\(home)/Library/Safari/Downloads.plist", "arrow.down.circle.fill", Color(hex: "7ED321")),
-                ("Chrome History", "\(home)/Library/Application Support/Google/Chrome/Default/History", "globe", Color(hex: "F5A623")),
-                ("Chrome Cookies", "\(home)/Library/Application Support/Google/Chrome/Default/Cookies", "link", Color(hex: "BD10E0")),
-                ("Firefox Data", "\(home)/Library/Application Support/Firefox/Profiles", "flame.fill", Color(hex: "D0021B")),
-                ("Recent Documents", "\(home)/Library/RecentServers", "doc.fill", Color(hex: "667EEA")),
-                ("Saved Application State", "\(home)/Library/Saved Application State", "app.badge.fill", Color(hex: "9B9B9B")),
-                ("Diagnostic Reports", "\(home)/Library/Logs/DiagnosticReports", "exclamationmark.triangle.fill", Color(hex: "F8E71C")),
+                ("Safari Downloads", "\(home)/Library/Safari/Downloads.plist", "arrow.down.circle.fill", DS.success),
+                ("Chrome History", "\(home)/Library/Application Support/Google/Chrome/Default/History", "globe", DS.warning),
+                ("Chrome Cookies", "\(home)/Library/Application Support/Google/Chrome/Default/Cookies", "link", Color(hex: "9B4DFF")),
+                ("Firefox Data", "\(home)/Library/Application Support/Firefox/Profiles", "flame.fill", Color(hex: "FF6611")),
+                ("Recent Documents", "\(home)/Library/RecentServers", "doc.fill", Color(hex: "3A70E0")),
+                ("Saved Application State", "\(home)/Library/Saved Application State", "app.badge.fill", DS.textMuted),
+                ("Diagnostic Reports", "\(home)/Library/Logs/DiagnosticReports", "exclamationmark.triangle.fill", DS.warning),
             ]
 
             for (name, path, icon, color) in paths {
@@ -210,21 +233,27 @@ struct PrivacyView: View {
         let bytesToClear = selectedSize
         let fm = FileManager.default
         for item in privacyItems where item.isSelected {
-            try? fm.removeItem(atPath: item.path)
+            let url = URL(fileURLWithPath: item.path)
+            if (try? fm.trashItem(at: url, resultingItemURL: nil)) == nil {
+                try? fm.removeItem(at: url)
+            }
         }
         if bytesToClear > 0 {
             scanEngine.recordFreed(bytes: bytesToClear, description: "Privacy cleanup")
         }
+        DS.playCleanComplete()
         scanPrivacy()
     }
 }
 
+// MARK: - Privacy Item Model
+
 struct PrivacyItem: Identifiable {
-    let id = UUID()
-    let name: String
-    let path: String
-    let size: Int64
-    let icon: String
+    let id    = UUID()
+    let name:  String
+    let path:  String
+    let size:  Int64
+    let icon:  String
     let color: Color
     var isSelected: Bool
 
@@ -232,6 +261,8 @@ struct PrivacyItem: Identifiable {
         ByteCountFormatter.string(fromByteCount: size, countStyle: .file)
     }
 }
+
+// MARK: - Privacy Row
 
 struct PrivacyRow: View {
     @Binding var item: PrivacyItem
@@ -245,7 +276,7 @@ struct PrivacyRow: View {
 
             ZStack {
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(item.color.opacity(0.15))
+                    .fill(item.color.opacity(0.18))
                     .frame(width: 36, height: 36)
                 Image(systemName: item.icon)
                     .font(.system(size: 16))
@@ -254,23 +285,24 @@ struct PrivacyRow: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(item.name)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(MSFont.headline)
+                    .foregroundColor(DS.textPrimary)
                 Text(item.path)
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
+                    .font(MSFont.mono)
+                    .foregroundColor(DS.textMuted)
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
             Spacer()
             Text(item.sizeFormatted)
                 .font(.system(size: 12, weight: .bold, design: .rounded))
-                .foregroundColor(.secondary)
+                .foregroundColor(DS.textSecondary)
 
             Button {
                 NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: item.path)])
             } label: {
                 Image(systemName: "arrow.right.circle")
-                    .foregroundColor(.secondary.opacity(isHovered ? 1 : 0.5))
+                    .foregroundColor(isHovered ? DS.textSecondary : DS.textMuted)
             }
             .buttonStyle(.plain)
             .help("Reveal in Finder")
@@ -278,9 +310,15 @@ struct PrivacyRow: View {
         .padding(12)
         .background(
             RoundedRectangle(cornerRadius: 10)
-                .fill(Color(NSColor.windowBackgroundColor))
-                .shadow(color: .black.opacity(isHovered ? 0.06 : 0.02), radius: isHovered ? 6 : 3, y: 1)
+                .fill(isHovered ? DS.bgElevated : DS.bgPanel)
+                .animation(Motion.fast, value: isHovered)
         )
-        .onHover { hovering in isHovered = hovering }
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .strokeBorder(DS.borderSubtle, lineWidth: 1)
+        )
+        .onHover { hovering in
+            withAnimation(Motion.fast) { isHovered = hovering }
+        }
     }
 }

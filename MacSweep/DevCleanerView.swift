@@ -13,27 +13,41 @@ struct DevCleanerView: View {
     @State private var showNodeModulesSheet = false
     @State private var showBuildArtifactsSheet = false
     @State private var showCLIToolsSheet = false
+    @EnvironmentObject var navManager: NavigationManager
 
     var body: some View {
         VStack(spacing: 0) {
             if !devEngine.isScanning && !devEngine.hasScanned {
-                landingScreen
-            } else {
-                devHeader
-                Divider()
-                devQuickActions
-                Divider()
-                HStack(spacing: 0) {
-                    devGroupList
-                    Rectangle().fill(Color.gray.opacity(0.15)).frame(width: 1)
-                    if let group = selectedGroup ?? devEngine.groups.first {
-                        devItemList(group: group)
-                    } else {
-                        emptyState
-                    }
+                VStack(spacing: 0) {
+                    navHeader(isLanding: true)
+                    landingScreen
                 }
-                Divider()
-                devFooter
+            } else if devEngine.isScanning {
+                ToolScanningView(
+                    section: .devCleaner,
+                    scanningTitle: "Scanning Developer Areas...",
+                    currentPath: .constant("Looking for node_modules, build artifacts, and caches..."),
+                    onStop: { devEngine.cancelScan() }
+                )
+            } else {
+                VStack(spacing: 0) {
+                    navHeader(isLanding: false)
+                    devHeader
+                    Divider()
+                    devQuickActions
+                    Divider()
+                    HStack(spacing: 0) {
+                        devGroupList
+                        Rectangle().fill(Color.gray.opacity(0.15)).frame(width: 1)
+                        if let group = selectedGroup ?? devEngine.groups.first {
+                            devItemList(group: group)
+                        } else {
+                            emptyState
+                        }
+                    }
+                    Divider()
+                    devFooter
+                }
             }
         }
         .sheet(isPresented: $showNodeModulesSheet) {
@@ -62,10 +76,14 @@ struct DevCleanerView: View {
     // MARK: - Landing
     private var landingScreen: some View {
         ZStack {
-            LinearGradient(
-                colors: [Color(hex: "06122C"), Color(hex: "0A244D"), Color(hex: "0F3C7E"), Color(hex: "06122C")],
-                startPoint: .top, endPoint: .bottom
+            // DS bg with section radial glow
+            DS.bg
+                .ignoresSafeArea()
+            RadialGradient(
+                colors: [SectionTheme.theme(for: .devCleaner).glow.opacity(0.10), .clear],
+                center: .center, startRadius: 0, endRadius: 350
             )
+            .ignoresSafeArea()
 
             VStack(spacing: 0) {
                 Spacer()
@@ -73,9 +91,13 @@ struct DevCleanerView: View {
                 // 3D Glass Icon for Dev Cleanup
                 ZStack {
                     RoundedRectangle(cornerRadius: 32)
-                        .fill(LinearGradient(colors: [Color(hex: "1A1A2E").opacity(0.6), Color(hex: "16213E").opacity(0.4)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .fill(SectionTheme.theme(for: .devCleaner).linearGradient)
                         .frame(width: 120, height: 120)
-                        .shadow(color: Color(hex: "1A1A2E").opacity(0.4), radius: 30, y: 8)
+                        .shadow(color: SectionTheme.theme(for: .devCleaner).glow.opacity(0.4), radius: 30, y: 8)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 32)
+                                .fill(RadialGradient(colors: [Color.white.opacity(0.2), .clear], center: .init(x: 0.3, y: 0.25), startRadius: 0, endRadius: 80))
+                        )
                         .overlay(
                             RoundedRectangle(cornerRadius: 32)
                                 .strokeBorder(Color.white.opacity(0.15), lineWidth: 1)
@@ -83,25 +105,25 @@ struct DevCleanerView: View {
 
                     Image(systemName: "chevron.left.forwardslash.chevron.right")
                         .font(.system(size: 40, weight: .bold))
-                        .foregroundStyle(LinearGradient(colors: [.white, Color(hex: "E94560")], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .foregroundStyle(LinearGradient(colors: [.white, SectionTheme.theme(for: .devCleaner).glow], startPoint: .topLeading, endPoint: .bottomTrailing))
                 }
                 .padding(.bottom, 28)
 
                 Text("Dev Cleaner")
-                    .font(.system(size: 32, weight: .bold, design: .rounded))
-                    .foregroundColor(.white)
+                    .font(MSFont.heroTitle)
+                    .foregroundColor(DS.textPrimary)
                     .padding(.bottom, 8)
 
                 Text("Optimize your developer machine by cleaning IDE caches,\nbuild artifacts, and redundant SDK symbol files.")
-                    .font(.system(size: 14))
-                    .foregroundColor(.white.opacity(0.5))
+                    .font(MSFont.body)
+                    .foregroundColor(DS.textSecondary)
                     .multilineTextAlignment(.center)
                     .lineSpacing(3)
                     .padding(.bottom, 48)
 
                 ToolPrimaryActionButton(
                     title: "Scan",
-                    colors: [Color(hex: "1A1A2E"), Color(hex: "E94560")],
+                    colors: SectionTheme.theme(for: .devCleaner).gradient,
                     icon: "sparkles"
                 ) {
                     devEngine.hasScanned = true
@@ -110,53 +132,94 @@ struct DevCleanerView: View {
 
                 Spacer()
             }
+            .padding(.horizontal, 24)
         }
     }
 
-    // MARK: - Header
-    var devHeader: some View {
+    // MARK: - Navigation Header
+    func navHeader(isLanding: Bool) -> some View {
         HStack(spacing: 16) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(LinearGradient(colors: [Color(hex: "1A1A2E"), Color(hex: "16213E"), Color(hex: "0F3460")],
-                                        startPoint: .topLeading, endPoint: .bottomTrailing))
-                    .frame(width: 44, height: 44)
-                Image(systemName: "chevron.left.forwardslash.chevron.right")
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundColor(Color(hex: "E94560"))
-            }
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Dev Cleaner")
-                    .font(.system(size: 20, weight: .bold, design: .rounded))
-                Text("Clean IDE caches, build artifacts, and dev tool junk")
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
-            }
-
-            Spacer()
-
-            // Summary
-            if devEngine.isScanning {
-                HStack(spacing: 8) {
-                    ProgressView().scaleEffect(0.7)
-                    Text("Scanning...")
-                        .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+            HStack(spacing: 8) {
+                Button {
+                    if !isLanding {
+                        devEngine.hasScanned = false
+                    } else {
+                        navManager.goBack()
+                    }
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor((isLanding && !navManager.canGoBack) ? DS.textMuted.opacity(0.5) : DS.textSecondary)
+                        .frame(width: 32, height: 32)
+                        .background((isLanding && !navManager.canGoBack) ? DS.bgElevated.opacity(0.5) : DS.bgElevated)
+                        .clipShape(Circle())
                 }
-            } else {
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text(ByteCountFormatter.string(fromByteCount: devEngine.totalSelectedSize, countStyle: .file))
+                .buttonStyle(.plain)
+                .disabled(isLanding && !navManager.canGoBack)
+
+                Button {
+                    navManager.goForward()
+                } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(navManager.canGoForward ? DS.textSecondary : DS.textMuted.opacity(0.5))
+                        .frame(width: 32, height: 32)
+                        .background(navManager.canGoForward ? DS.bgElevated : DS.bgElevated.opacity(0.5))
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .disabled(!navManager.canGoForward)
+            }
+
+            if !isLanding {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(SectionTheme.theme(for: .devCleaner).linearGradient)
+                        .frame(width: 44, height: 44)
+                    Image(systemName: "chevron.left.forwardslash.chevron.right")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundColor(.white)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Developer Cleaner")
                         .font(.system(size: 18, weight: .bold, design: .rounded))
-                        .foregroundColor(Color(hex: "E94560"))
-                    Text("selected to clean")
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(DS.textPrimary)
+                    Text("IDE caches, build artifacts & SDK symbols")
+                        .font(.system(size: 11))
+                        .foregroundColor(DS.textMuted)
                 }
+                
+                Spacer()
+                
+                Button {
+                    devEngine.scanAll()
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.clockwise")
+                        Text("Rescan")
+                    }
+                    .font(MSFont.caption)
+                    .foregroundColor(DS.textSecondary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(DS.bgElevated)
+                    .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            } else {
+                Spacer()
             }
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 16)
+    }
+
+    // MARK: - Header
+    var devHeader: some View {
+        HStack(spacing: 0) {
+            // Header bar removed here as it's now in navHeader
+        }
     }
 
     // MARK: - Quick Actions Bar
@@ -164,80 +227,31 @@ struct DevCleanerView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 // Select All Safe
-                Button {
-                    devEngine.selectAllSafe()
-                } label: {
-                    Label("Select Safe", systemImage: "checkmark.circle.fill")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 10).padding(.vertical, 5)
-                        .background(AppTheme.success.opacity(0.8).cornerRadius(6))
-                }.buttonStyle(.plain)
+                devChip("Select Safe", icon: "checkmark.circle.fill", color: DS.success) { devEngine.selectAllSafe() }
+                devChip("Deselect All", icon: "xmark.circle", color: DS.textSecondary) { devEngine.deselectAll() }
 
-                // Deselect All
-                Button {
-                    devEngine.deselectAll()
-                } label: {
-                    Label("Deselect All", systemImage: "xmark.circle")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(.primary)
-                        .padding(.horizontal, 10).padding(.vertical, 5)
-                        .background(Color.gray.opacity(0.15).cornerRadius(6))
-                }.buttonStyle(.plain)
+                Rectangle().fill(DS.borderSubtle).frame(width: 1, height: 18)
 
-                Divider().frame(height: 18)
-
-                // Find node_modules
-                Button {
+                devChip("node_modules", icon: "folder.fill.badge.questionmark", color: Color(hex: "CB3837")) {
                     showNodeModulesSheet = true
                     devEngine.deepScanNodeModules()
-                } label: {
-                    Label("Find node_modules", systemImage: "folder.fill.badge.questionmark")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 10).padding(.vertical, 5)
-                        .background(Color(hex: "CB3837").cornerRadius(6))
-                }.buttonStyle(.plain)
-
-                // Find Build Artifacts
-                Button {
+                }
+                devChip("Build Artifacts", icon: "hammer.circle.fill", color: Color(hex: "3A70E0")) {
                     showBuildArtifactsSheet = true
                     devEngine.deepScanBuildArtifacts()
-                } label: {
-                    Label("Find Build Artifacts", systemImage: "hammer.circle.fill")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 10).padding(.vertical, 5)
-                        .background(Color(hex: "007AFF").cornerRadius(6))
-                }.buttonStyle(.plain)
-
-                // Manage CLI Tools
-                Button {
+                }
+                devChip("CLI Tools", icon: "wrench.and.screwdriver", color: SectionTheme.theme(for: .devCleaner).glow) {
                     showCLIToolsSheet = true
                     devEngine.scanCLITools()
-                } label: {
-                    Label("Manage CLI Tools", systemImage: "wrench.and.screwdriver")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 10).padding(.vertical, 5)
-                        .background(Color(hex: "8B5CF6").cornerRadius(6))
-                }.buttonStyle(.plain)
-
-                // Open Terminal
-                Button {
+                }
+                devChip("Terminal", icon: "terminal", color: DS.textSecondary) {
                     NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/Terminal.app"))
-                } label: {
-                    Label("Terminal", systemImage: "terminal")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(.primary)
-                        .padding(.horizontal, 10).padding(.vertical, 5)
-                        .background(Color.gray.opacity(0.15).cornerRadius(6))
-                }.buttonStyle(.plain)
+                }
             }
             .padding(.horizontal, 16)
         }
-        .padding(.vertical, 6)
-        .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+        .padding(.vertical, 8)
+        .background(DS.bgPanel)
     }
 
     // MARK: - Group List
@@ -351,39 +365,57 @@ struct DevCleanerView: View {
 
     var emptyState: some View {
         VStack(spacing: 12) {
-            Image(systemName: "sparkles").font(.system(size: 40)).foregroundColor(.secondary.opacity(0.3))
+            Image(systemName: "sparkles")
+                .font(.system(size: 40))
+                .foregroundColor(DS.textMuted)
             Text("Select a category to view items")
-                .foregroundColor(.secondary)
+                .font(MSFont.body)
+                .foregroundColor(DS.textMuted)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(DS.bg)
+    }
+
+    private func devChip(_ title: String, icon: String, color: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: icon)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(color)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(color.opacity(0.12))
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Footer
     var devFooter: some View {
         HStack(spacing: 12) {
-            // Rescan
             Button {
                 devEngine.scanAll()
             } label: {
-                Label("Rescan", systemImage: "arrow.clockwise")
-                    .font(.system(size: 12, weight: .medium))
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 7)
-                    .background(Color(NSColor.controlBackgroundColor))
-                    .cornerRadius(8)
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.clockwise")
+                    Text("Rescan")
+                }
+                .font(MSFont.caption)
+                .foregroundColor(DS.textSecondary)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 7)
+                .background(DS.bgElevated)
+                .clipShape(Capsule())
             }
             .buttonStyle(.plain)
 
             Spacer()
 
-            // Stats row
             if !devEngine.isScanning {
                 Text("\(devEngine.totalSelected) items selected")
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
+                    .font(MSFont.caption)
+                    .foregroundColor(DS.textMuted)
             }
 
-            // Clean button
             Button {
                 showCleanSheet = true
             } label: {
@@ -396,18 +428,16 @@ struct DevCleanerView: View {
                         Text("Clean \(ByteCountFormatter.string(fromByteCount: devEngine.totalSelectedSize, countStyle: .file))")
                     }
                 }
-                .font(.system(size: 13, weight: .semibold))
+                .font(MSFont.headline)
                 .foregroundColor(.white)
                 .padding(.horizontal, 20)
                 .padding(.vertical, 9)
                 .background(
-                    RoundedRectangle(cornerRadius: 10)
+                    Capsule()
                         .fill(devEngine.totalSelected == 0
-                              ? AnyShapeStyle(Color.gray)
-                              : AnyShapeStyle(LinearGradient(colors: [Color(hex: "E94560"), Color(hex: "764BA2")],
-                                                             startPoint: .leading, endPoint: .trailing)))
+                              ? AnyShapeStyle(DS.textMuted)
+                              : AnyShapeStyle(SectionTheme.theme(for: .devCleaner).linearGradient))
                 )
-                .cornerRadius(10)
             }
             .buttonStyle(.plain)
             .disabled(devEngine.totalSelected == 0 || isCleaning)
@@ -674,6 +704,11 @@ class DevCleanEngine: ObservableObject {
         }
     }
 
+    func cancelScan() {
+        hasScanned = true
+        isScanning = false
+    }
+
     func toggleItem(groupId: UUID, itemId: UUID) {
         guard let gi = groups.firstIndex(where: { $0.id == groupId }),
               let ii = groups[gi].items.firstIndex(where: { $0.id == itemId }) else { return }
@@ -759,9 +794,10 @@ class DevCleanEngine: ObservableObject {
                 allResults.append(contentsOf: DevCleanEngine.findDirectories(named: name, under: home))
             }
             allResults.sort { $0.size > $1.size }
-            await MainActor.run {
-                self.buildArtifactResults = allResults
-                self.isDeepScanning = false
+            let finalResults = allResults
+            await MainActor.run { [weak self] in
+                self?.buildArtifactResults = finalResults
+                self?.isDeepScanning = false
             }
         }
     }
@@ -907,9 +943,10 @@ class DevCleanEngine: ObservableObject {
                 }
             }
 
-            await MainActor.run {
-                self.cliPackages = packages
-                self.isScanningCLI = false
+            let finalPackages = packages
+            await MainActor.run { [weak self] in
+                self?.cliPackages = finalPackages
+                self?.isScanningCLI = false
             }
         }
     }
@@ -925,7 +962,7 @@ class DevCleanEngine: ObservableObject {
         return path.isEmpty ? nil : path
     }
 
-    nonisolated static func runShell(_ command: String) -> String {
+    nonisolated static func runShell(_ command: String, timeout: TimeInterval = 30.0) -> String {
         let proc = Process()
         let pipe = Pipe()
         proc.launchPath = "/bin/zsh"
@@ -933,10 +970,13 @@ class DevCleanEngine: ObservableObject {
         proc.standardOutput = pipe
         proc.standardError = FileHandle.nullDevice
         proc.environment = ProcessInfo.processInfo.environment
-        do {
-            try proc.run()
-            proc.waitUntilExit()
-        } catch { return "" }
+        let sema = DispatchSemaphore(value: 0)
+        proc.terminationHandler = { _ in sema.signal() }
+        do { try proc.run() } catch { return "" }
+        if sema.wait(timeout: .now() + timeout) == .timedOut {
+            proc.terminate()
+            return ""
+        }
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         return String(data: data, encoding: .utf8) ?? ""
     }
@@ -1403,11 +1443,10 @@ struct DevGroup: Identifiable {
 
     /// Look up real app icon from bundle IDs or app name
     static func iconForApp(bundleIds: [String], appName: String) -> NSImage? {
-        let ws = NSWorkspace.shared
         // Try bundle IDs first
         for bid in bundleIds {
-            if let url = ws.urlForApplication(withBundleIdentifier: bid) {
-                return ws.icon(forFile: url.path)
+            if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bid) {
+                return NSWorkspace.shared.icon(forFile: url.path)
             }
         }
         // Fallback: search /Applications by name
@@ -1416,7 +1455,7 @@ struct DevGroup: Identifiable {
         for dir in searchDirs {
             let appPath = "\(dir)/\(appName).app"
             if fm.fileExists(atPath: appPath) {
-                return ws.icon(forFile: appPath)
+                return NSWorkspace.shared.icon(forFile: appPath)
             }
         }
         return nil
@@ -1522,7 +1561,7 @@ struct DevGroup: Identifiable {
             ),
             DevGroup(
                 name: "Crash Logs", icon: "exclamationmark.triangle.fill",
-                gradientColors: [Color(hex: "FF5858"), Color(hex: "D0021B")],
+                gradientColors: [DS.danger, Color(hex: "D0021B")],
                 itemDefinitions: crashItems(home: home),
                 bundleIds: ["com.apple.Console"]
             ),
@@ -1538,7 +1577,6 @@ struct DevGroup: Identifiable {
     /// Scan ALL apps in /Applications to find developer tools, IDEs, editors, terminals
     static func detectedIDEGroups(home: String) -> [DevGroup] {
         let fm = FileManager.default
-        let ws = NSWorkspace.shared
         let support = "\(home)/Library/Application Support"
         let caches  = "\(home)/Library/Caches"
         let logs    = "\(home)/Library/Logs"
@@ -1753,9 +1791,6 @@ struct DevGroup: Identifiable {
                 }
 
                 guard !items.isEmpty else { continue }
-
-                // Get the real app icon
-                let appIcon = ws.icon(forFile: appPath)
 
                 discovered.append(DevGroup(
                     name: appName, icon: "app.fill",

@@ -65,6 +65,7 @@ class ScanEngine: ObservableObject {
     private let liveMemoryUsedCompactKey = "live_memory_used_compact"
     private let liveMemoryUsagePercentKey = "live_memory_usage_percent"
     private let liveMetricsSeqKey = "live_metrics_seq"
+    private var scanCancelled = false
     private var largeFileThresholdBytes: Int64 {
         let thresholdMB = UserDefaults.standard.object(forKey: "largeFileThresholdMB") as? Double ?? 100
         return max(Int64(thresholdMB * 1_000_000), 1)
@@ -81,6 +82,7 @@ class ScanEngine: ObservableObject {
         if ud.object(forKey: "scanIncludeMailAttachments") as? Bool ?? true { enabled.insert(.mailAttach) }
         if ud.object(forKey: "scanIncludeAppLeftovers") as? Bool ?? true { enabled.insert(.appLeftovers) }
         if ud.object(forKey: "scanIncludeLargeFiles") as? Bool ?? true { enabled.insert(.largeFiles) }
+        if ud.object(forKey: "scanIncludePhotoJunk") as? Bool ?? true { enabled.insert(.photoJunk) }
         return enabled
     }
 
@@ -99,8 +101,8 @@ class ScanEngine: ObservableObject {
     init() {
         loadFreedHistory()
         let savedRefreshInterval = UserDefaults.standard.object(forKey: "refreshInterval") as? Double ?? 2.0
-        startRefreshTimer(interval: savedRefreshInterval)
-        startSystemStatsTimer()
+        startRefreshTimer(interval: max(savedRefreshInterval, 10.0))
+        startSystemStatsTimer(interval: 5.0)
         refreshDiskInfo()
         refreshRunningApps()
         updateSystemInfo()
@@ -116,7 +118,7 @@ class ScanEngine: ObservableObject {
     var totalFoundSize: Int64 { scanItems.reduce(0) { $0 + $1.size } }
 
     // MARK: - Timer
-    func startRefreshTimer(interval: Double = 2.0) {
+    func startRefreshTimer(interval: Double = 10.0) {
         refreshTimer?.invalidate()
         refreshTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
@@ -126,7 +128,7 @@ class ScanEngine: ObservableObject {
         }
     }
 
-    private func startSystemStatsTimer(interval: Double = 1.0) {
+    private func startSystemStatsTimer(interval: Double = 5.0) {
         systemStatsTimer?.invalidate()
         systemStatsTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
@@ -280,19 +282,7 @@ class ScanEngine: ObservableObject {
 
     // MARK: - Network Bytes
     nonisolated static func getNetworkBytes() -> (up: Int64, down: Int64) {
-        let task = Process()
-        task.launchPath = "/usr/sbin/netstat"
-        task.arguments = ["-ib", "-n"]
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = FileHandle.nullDevice
-        do {
-            try task.run()
-            task.waitUntilExit()
-        } catch { return (0, 0) }
-
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        guard let output = String(data: data, encoding: .utf8) else { return (0, 0) }
+        guard let output = runProcess("/usr/sbin/netstat", ["-ib", "-n"], timeout: 4.0) else { return (0, 0) }
 
         var totalIn: Int64 = 0
         var totalOut: Int64 = 0
@@ -371,21 +361,7 @@ class ScanEngine: ObservableObject {
     }
 
     nonisolated private static func defaultRouteInterface() -> String? {
-        let task = Process()
-        task.launchPath = "/usr/sbin/route"
-        task.arguments = ["-n", "get", "default"]
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = FileHandle.nullDevice
-        do {
-            try task.run()
-            task.waitUntilExit()
-        } catch {
-            return nil
-        }
-
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        guard let output = String(data: data, encoding: .utf8) else { return nil }
+        guard let output = runProcess("/usr/sbin/route", ["-n", "get", "default"], timeout: 3.0) else { return nil }
         for rawLine in output.split(whereSeparator: \.isNewline) {
             let line = rawLine.trimmingCharacters(in: .whitespaces)
             if line.hasPrefix("interface:") {
@@ -446,7 +422,7 @@ class ScanEngine: ObservableObject {
                     id: pid,
                     name: name,
                     bundleId: app.bundleIdentifier ?? "",
-                    icon: app.icon,
+                    icon: resolvedRunningAppIcon(for: app, name: name),
                     cpuPercent: stat.cpu,
                     memoryMB: stat.mem,
                     isActive: app.isActive
@@ -459,6 +435,54 @@ class ScanEngine: ObservableObject {
             }
             self.runningApps = infos
         }
+    }
+
+    private func resolvedRunningAppIcon(for app: NSRunningApplication, name: String) -> NSImage? {
+        let bundleID = app.bundleIdentifier ?? ""
+        let isMacSweepSelf =
+            app.processIdentifier == ProcessInfo.processInfo.processIdentifier
+            || (!bundleID.isEmpty && bundleID == Bundle.main.bundleIdentifier)
+            || name.localizedCaseInsensitiveContains("MacSweep")
+
+        if isMacSweepSelf, let brandedIcon = macSweepBrandedIcon() {
+            return brandedIcon
+        }
+
+        if let icon = app.icon {
+            return icon
+        }
+
+        if let bundleURL = app.bundleURL {
+            let fileIcon = NSWorkspace.shared.icon(forFile: bundleURL.path)
+            return fileIcon
+        }
+
+        return nil
+    }
+
+    private func macSweepBrandedIcon() -> NSImage? {
+        let candidates = [
+            "BrandIconSVG",
+            "BrandLogoSVG",
+            "BrandLogo",
+            "AppLogo"
+        ]
+
+        for name in candidates {
+            if let image = NSImage(named: NSImage.Name(name)) {
+                return image
+            }
+        }
+
+        if let iconFile = Bundle.main.object(forInfoDictionaryKey: "CFBundleIconFile") as? String {
+            let cleanName = iconFile.replacingOccurrences(of: ".icns", with: "")
+            if let path = Bundle.main.path(forResource: cleanName, ofType: "icns"),
+               let image = NSImage(contentsOfFile: path) {
+                return image
+            }
+        }
+
+        return NSApp.applicationIconImage
     }
 
     func quitApp(_ info: RunningAppInfo, force: Bool = false) {
@@ -514,6 +538,7 @@ class ScanEngine: ObservableObject {
 
     // MARK: - Start Scan
     func startScan(mode: ScanMode = .smart) async {
+        scanCancelled = false
         isScanning   = true
         scanComplete = false
         scanItems    = []
@@ -562,6 +587,14 @@ class ScanEngine: ObservableObject {
             (.mailAttach, [
                 "\(home)/Library/Mail Downloads",
                 "\(home)/Library/Containers/com.apple.mail/Data/Library/Mail Downloads"
+            ]),
+            (.photoJunk, [
+                "\(home)/Library/Application Support/Adobe/Adobe Photoshop 2026/Caches",
+                "\(home)/Library/Application Support/Adobe/Adobe Photoshop 2025/Caches",
+                "\(home)/Library/Containers/com.apple.Photos/Data/Library/Caches",
+                "\(home)/Library/Containers/com.apple.Photos/Data/Library/Application Support/Photos/Analysis",
+                "\(home)/Library/Containers/com.apple.Photos/Data/Library/Application Support/Photos/Derivatives",
+                "\(home)/Library/Application Support/Photo Booth/Caches"
             ])
         ]
 
@@ -583,8 +616,16 @@ class ScanEngine: ObservableObject {
         var step = 0.0
 
         for (category, paths) in scanMap {
+            if scanCancelled {
+                finishCancelledScan()
+                return
+            }
             guard enabledCategories.contains(category) else { continue }
             for path in paths {
+                if scanCancelled {
+                    finishCancelledScan()
+                    return
+                }
                 await addScanItem(path: path, category: category)
             }
             step += 1
@@ -592,6 +633,10 @@ class ScanEngine: ObservableObject {
         }
 
         if enabledCategories.contains(.appLeftovers) {
+            if scanCancelled {
+                finishCancelledScan()
+                return
+            }
             currentPath = "Scanning for app leftovers..."
             await scanAppLeftovers(home: home)
             step += 1
@@ -599,8 +644,16 @@ class ScanEngine: ObservableObject {
         }
 
         if enabledCategories.contains(.largeFiles) {
+            if scanCancelled {
+                finishCancelledScan()
+                return
+            }
             currentPath = "Scanning for large files..."
             await scanLargeFiles(home: home, customPath: customPath)
+        }
+        if scanCancelled {
+            finishCancelledScan()
+            return
         }
         scanProgress = 1.0
 
@@ -608,6 +661,11 @@ class ScanEngine: ObservableObject {
         scanComplete = true
         currentPath  = ""
         refreshDiskInfo()
+
+        // Send notification for scan completion
+        let totalJunk = scanItems.reduce(Int64(0)) { $0 + $1.size }
+        let junkFormatted = ByteCountFormatter.string(fromByteCount: totalJunk, countStyle: .file)
+        NotificationManager.shared.notifyScanComplete(junkFound: junkFormatted)
     }
 
     // MARK: - Space Lens
@@ -618,19 +676,22 @@ class ScanEngine: ObservableObject {
         let home = homeDir
 
         let folders: [(String, String, Color, String)] = [
-            ("Documents", "\(home)/Documents", Color(hex: "667EEA"), "doc.fill"),
-            ("Downloads", "\(home)/Downloads", Color(hex: "F5A623"), "arrow.down.circle.fill"),
-            ("Desktop",   "\(home)/Desktop",   Color(hex: "7ED321"), "desktopcomputer"),
-            ("Movies",    "\(home)/Movies",     Color(hex: "BD10E0"), "film.fill"),
-            ("Music",     "\(home)/Music",      Color(hex: "D0021B"), "music.note"),
-            ("Pictures",  "\(home)/Pictures",   Color(hex: "4A90D9"), "photo.fill"),
-            ("Applications", "/Applications",   Color(hex: "F8E71C"), "app.fill"),
-            ("Library",   "\(home)/Library",    Color(hex: "9B9B9B"), "folder.fill"),
-            ("Developer", "\(home)/Developer",  Color(hex: "38EF7D"), "chevron.left.forwardslash.chevron.right"),
+            ("Documents", "\(home)/Documents", DS.brandTeal,                   "doc.fill"),
+            ("Downloads", "\(home)/Downloads", DS.warning,                     "arrow.down.circle.fill"),
+            ("Desktop",   "\(home)/Desktop",   DS.brandGreen,                  "desktopcomputer"),
+            ("Movies",    "\(home)/Movies",    Color(hex: "8B5CF6"),            "film.fill"),
+            ("Music",     "\(home)/Music",     DS.danger,                      "music.note"),
+            ("Pictures",  "\(home)/Pictures",  Color(hex: "3A70E0"),            "photo.fill"),
+            ("Applications", "/Applications",  Color(hex: "FF8C3A"),            "app.fill"),
+            ("Library",   "\(home)/Library",   DS.textMuted,                    "folder.fill"),
+            ("Developer", "\(home)/Developer", Color(hex: "00C896"),            "chevron.left.forwardslash.chevron.right"),
         ]
 
         for (name, path, color, icon) in folders {
-            guard fm.fileExists(atPath: path) else { continue }
+            // Skip directories we can't read to avoid macOS permission prompts
+            // (e.g. ~/Music triggers Apple Music, ~/Pictures triggers Photos).
+            guard fm.fileExists(atPath: path),
+                  fm.isReadableFile(atPath: path) else { continue }
             let size = await Task.detached(priority: .background) {
                 ScanEngine.calcSize(path: path)
             }.value
@@ -649,7 +710,7 @@ class ScanEngine: ObservableObject {
                     name: "System & Other",
                     path: "/",
                     size: remainder,
-                    color: Color(hex: "6E6E73"),
+                    color: DS.textMuted,
                     icon: "internaldrive.fill"
                 ))
             }
@@ -662,8 +723,12 @@ class ScanEngine: ObservableObject {
     // MARK: - Helpers
 
     private func addScanItem(path: String, category: ScanCategory) async {
+        guard !scanCancelled else { return }
         currentPath = path
-        guard fm.fileExists(atPath: path) else { return }
+        // Skip paths that don't exist or aren't readable (avoids macOS
+        // permission prompts for protected containers like Photos, Music).
+        guard fm.fileExists(atPath: path),
+              fm.isReadableFile(atPath: path) else { return }
         let size = await Task.detached(priority: .background) {
             ScanEngine.calcSize(path: path)
         }.value
@@ -684,6 +749,7 @@ class ScanEngine: ObservableObject {
         guard let entries = try? fm.contentsOfDirectory(atPath: supportDir) else { return }
 
         for entry in entries {
+            if scanCancelled { return }
             guard !entry.hasPrefix("com.apple."),
                   !entry.hasPrefix("Apple"),
                   !entry.hasPrefix("MobileSync") else { continue }
@@ -704,6 +770,7 @@ class ScanEngine: ObservableObject {
                 ScanEngine.calcSize(path: path)
             }.value
             guard size > 1_000_000 else { continue }
+            if scanCancelled { return }
 
             scanItems.append(ScanItem(
                 name: entry,
@@ -720,13 +787,14 @@ class ScanEngine: ObservableObject {
         if let cp = customPath {
             roots = [cp]
         } else {
+            let fm = FileManager.default
             roots = [
                 "\(home)/Documents",
                 "\(home)/Downloads",
                 "\(home)/Desktop",
                 "\(home)/Movies",
                 "\(home)/Music"
-            ]
+            ].filter { fm.isReadableFile(atPath: $0) }   // skip protected dirs
         }
 
         let threshold = largeFileThresholdBytes
@@ -735,6 +803,7 @@ class ScanEngine: ObservableObject {
         }.value
 
         for (name, path, size) in found {
+            if scanCancelled { return }
             scanItems.append(ScanItem(
                 name: name,
                 path: path,
@@ -743,6 +812,26 @@ class ScanEngine: ObservableObject {
                 isSelected: false
             ))
         }
+    }
+
+    func cancelScan() {
+        guard isScanning else { return }
+        scanCancelled = true
+    }
+
+    /// Reset scan state so a tool view shows its landing screen again.
+    func resetScan() {
+        guard !isScanning else { return }
+        scanComplete = false
+        scanItems = []
+        currentPath = ""
+        scanProgress = 0
+    }
+
+    private func finishCancelledScan() {
+        isScanning = false
+        scanComplete = false
+        currentPath = ""
     }
 
     func getInstalledAppNames() -> [String] {
@@ -803,26 +892,15 @@ class ScanEngine: ObservableObject {
 
     nonisolated static func fetchProcessStats() -> [pid_t: (cpu: Double, mem: Double)] {
         var result: [pid_t: (cpu: Double, mem: Double)] = [:]
-        let task = Process()
-        task.launchPath = "/bin/ps"
-        task.arguments  = ["-eo", "pid,pcpu,rss"]
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError  = Pipe()
-        do {
-            try task.run()
-            task.waitUntilExit()
-            let data   = pipe.fileHandleForReading.readDataToEndOfFile()
-            let output = String(data: data, encoding: .utf8) ?? ""
-            for line in output.components(separatedBy: "\n").dropFirst() {
-                let parts = line.split(separator: " ")
-                guard parts.count >= 3,
-                      let pid  = pid_t(parts[0]),
-                      let cpu  = Double(parts[1]),
-                      let rss  = Double(parts[2]) else { continue }
-                result[pid] = (cpu: cpu, mem: rss / 1024.0) // KB -> MB
-            }
-        } catch {}
+        guard let output = runProcess("/bin/ps", ["-eo", "pid,pcpu,rss"], timeout: 4.0) else { return result }
+        for line in output.components(separatedBy: "\n").dropFirst() {
+            let parts = line.split(separator: " ")
+            guard parts.count >= 3,
+                  let pid  = pid_t(parts[0]),
+                  let cpu  = Double(parts[1]),
+                  let rss  = Double(parts[2]) else { continue }
+            result[pid] = (cpu: cpu, mem: rss / 1024.0) // KB -> MB
+        }
         return result
     }
 
@@ -971,22 +1049,29 @@ class ScanEngine: ObservableObject {
         return min(max(fraction, 0.0), 1.0)
     }
 
-    nonisolated private static func runCommand(executable: String, arguments: [String]) -> String? {
+    /// Runs a process with a timeout. Returns output string or nil on failure/timeout.
+    nonisolated static func runProcess(_ executable: String, _ args: [String], timeout: TimeInterval = 5.0) -> String? {
         let task = Process()
         task.launchPath = executable
-        task.arguments = arguments
+        task.arguments = args
         let pipe = Pipe()
         task.standardOutput = pipe
         task.standardError = FileHandle.nullDevice
+        let sema = DispatchSemaphore(value: 0)
+        task.terminationHandler = { _ in sema.signal() }
         do {
             try task.run()
-            task.waitUntilExit()
-        } catch {
+        } catch { return nil }
+        if sema.wait(timeout: .now() + timeout) == .timedOut {
+            task.terminate()
             return nil
         }
         guard task.terminationStatus == 0 else { return nil }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        return String(data: data, encoding: .utf8)
+        return String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)
+    }
+
+    nonisolated private static func runCommand(executable: String, arguments: [String]) -> String? {
+        runProcess(executable, arguments)
     }
 
     nonisolated private static func extractTrailingInteger(from line: String) -> Int64? {

@@ -1,11 +1,12 @@
 import SwiftUI
 
+// MARK: - Sidebar View (expanded, 200px)
 struct SidebarView: View {
     @Binding var selected: AppSection
     @Binding var hoverSection: AppSection?
     @ObservedObject var scanEngine: ScanEngine
     @ObservedObject var settings: AppSettings
-    
+
     @ObservedObject var appsEngine: ApplicationsEngine
     @ObservedObject var protectionEngine: ProtectionEngine
     @ObservedObject var perfEngine: PerformanceEngine
@@ -14,365 +15,326 @@ struct SidebarView: View {
     @ObservedObject var spaceEngine: SpaceLensEngine
     @ObservedObject var devEngine: DevCleanEngine
 
-    private let cleaningTools: [AppSection] = [.smartScan, .systemJunk, .largeFiles, .duplicates]
+    private let cleaningTools: [AppSection]   = [.smartScan, .systemJunk, .largeFiles, .duplicates]
     private let protectionTools: [AppSection] = [.protection]
-    private let managementTools: [AppSection] = [.performance, .applications]
-    private let utilityTools: [AppSection] = [.spaceLens, .devCleaner]
-    private var displayCPUPercent: Int { scanEngine.cpuUsagePercent }
-    private var displayMemoryUsedCompact: String { scanEngine.memoryUsedCompact }
-    private var displayMemoryUsagePercent: Int { scanEngine.memoryUsagePercent }
-    private var appVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
+    private let securityTools: [AppSection]   = [.malwareScanner, .realtimeProtect, .adwareCleaner, .ransomwareGuard, .networkMonitor, .quarantine, .integrityMonitor]
+    private let managementTools: [AppSection] = [.performance, .maintenance, .memoryOptimizer, .applications]
+    private let utilityTools: [AppSection]    = [.spaceLens, .devCleaner]
+
+    // Scroll indicator state
+    @State private var sidebarScrollOffset: CGFloat = 0
+    @State private var sidebarContentHeight: CGFloat = 0
+    @State private var sidebarVisibleHeight: CGFloat = 0
+
+    private var canScrollUp: Bool {
+        sidebarScrollOffset < -10 && !canScrollDown
     }
 
-    private func isScanning(section: AppSection) -> Bool {
+    private var canScrollDown: Bool {
+        guard sidebarContentHeight > 0, sidebarVisibleHeight > 0 else { return false }
+        let bottomOffset = sidebarContentHeight + sidebarScrollOffset - sidebarVisibleHeight
+        return bottomOffset > 10
+    }
+
+    private func isScanning(_ section: AppSection) -> Bool {
         switch section {
-        case .smartScan: return scanEngine.isScanning
-        case .systemJunk, .largeFiles: return scanEngine.isScanning
-        case .duplicates: return dupEngine.isScanning
-        case .protection: return protectionEngine.isScanning
-        case .performance: return perfEngine.isScanning
+        case .smartScan, .systemJunk, .largeFiles: return scanEngine.isScanning
+        case .duplicates:   return dupEngine.isScanning
+        case .protection:   return protectionEngine.isScanning
+        case .performance:  return perfEngine.isScanning
+        case .memoryOptimizer: return memoryEngine.isScanning
         case .applications: return appsEngine.isScanning
-        case .spaceLens: return spaceEngine.isScanning
-        case .devCleaner: return devEngine.isScanning
+        case .spaceLens:    return spaceEngine.isScanning
+        case .devCleaner:   return devEngine.isScanning
         default: return false
         }
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Logo header
-            HStack(spacing: 10) {
-                LogoView(size: 34)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("MacSweep")
-                        .font(.system(size: 17, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
-                    Text("v\(appVersion)")
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
+        VStack(alignment: .leading, spacing: 0) {
+            // Logo
+            SidebarLogoButton(selected: $selected)
+                .padding(.top, 34)
+                .padding(.bottom, 10)
+                .padding(.horizontal, 16)
+
+            thinDivider
+
+            ScrollViewReader { proxy in
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        // Dashboard
+                        SidebarIconButton(section: .dashboard, selected: $selected, hoverSection: $hoverSection, isScanning: false)
+                            .padding(.top, 6)
+                            .padding(.bottom, 2)
+                            .id("top")
+
+                        thinDivider.padding(.top, 4).padding(.bottom, 4)
+
+                        // Cleaning
+                        Text("Cleaning")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(DS.textMuted)
+                            .padding(.horizontal, 20)
+                            .padding(.top, 6)
+                            .padding(.bottom, 2)
+                        ForEach(cleaningTools, id: \.self) { section in
+                            SidebarIconButton(section: section, selected: $selected, hoverSection: $hoverSection, isScanning: isScanning(section))
+                        }
+
+                        thinDivider.padding(.vertical, 8)
+
+                        // Protection
+                        Text("Protection")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(DS.textMuted)
+                            .padding(.horizontal, 20)
+                            .padding(.bottom, 2)
+                        ForEach(protectionTools, id: \.self) { section in
+                            SidebarIconButton(section: section, selected: $selected, hoverSection: $hoverSection, isScanning: isScanning(section))
+                        }
+
+                        thinDivider.padding(.vertical, 8)
+
+                        // Antivirus / Security
+                        Text("Antivirus")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(DS.textMuted)
+                            .padding(.horizontal, 20)
+                            .padding(.bottom, 2)
+                        ForEach(securityTools, id: \.self) { section in
+                            SidebarIconButton(section: section, selected: $selected, hoverSection: $hoverSection, isScanning: false)
+                        }
+
+                        thinDivider.padding(.vertical, 8)
+
+                        // Management
+                        Text("Management")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(DS.textMuted)
+                            .padding(.horizontal, 20)
+                            .padding(.bottom, 2)
+                        ForEach(managementTools, id: \.self) { section in
+                            SidebarIconButton(section: section, selected: $selected, hoverSection: $hoverSection, isScanning: isScanning(section))
+                        }
+
+                        thinDivider.padding(.vertical, 8)
+
+                        // Utilities
+                        Text("Utilities")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(DS.textMuted)
+                            .padding(.horizontal, 20)
+                            .padding(.bottom, 2)
+                        ForEach(utilityTools, id: \.self) { section in
+                            SidebarIconButton(section: section, selected: $selected, hoverSection: $hoverSection, isScanning: isScanning(section))
+                        }
+
+                        Spacer(minLength: 8)
+                            .id("bottom")
+                    }
+                    .background(
+                        GeometryReader { innerGeo in
+                            Color.clear.onChange(of: innerGeo.frame(in: .named("sidebarScroll")).origin.y) { _, y in
+                                DispatchQueue.main.async { sidebarScrollOffset = y }
+                            }
+                            .onChange(of: innerGeo.size.height) { _, h in
+                                DispatchQueue.main.async { sidebarContentHeight = h }
+                            }
+                            .onAppear {
+                                DispatchQueue.main.async {
+                                    sidebarScrollOffset = innerGeo.frame(in: .named("sidebarScroll")).origin.y
+                                    sidebarContentHeight = innerGeo.size.height
+                                }
+                            }
+                        }
+                    )
                 }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 18)
-            .padding(.top, 18)
-            .padding(.bottom, 14)
-
-            // Disk usage widget
-            if let disk = scanEngine.diskInfo {
-                DiskWidget(disk: disk)
-                    .padding(.horizontal, 14)
-                    .padding(.bottom, 14)
-            }
-
-            // System health pill row
-            HStack(spacing: 8) {
-                SystemPill(label: "CPU", value: "\(displayCPUPercent)%",
-                           color: displayCPUPercent > 80 ? .red : .orange)
-                SystemPill(label: "RAM", value: displayMemoryUsedCompact,
-                           color: displayMemoryUsagePercent > 80 ? .red : Color(hex: "38EF7D"))
-                SystemPill(label: "Apps", value: "\(scanEngine.runningAppCount)",
-                           color: AppTheme.accent)
-            }
-            .padding(.horizontal, 14)
-            .padding(.bottom, 12)
-
-            Divider().padding(.horizontal, 14)
-
-            // Navigation sections
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 2) {
-                    // Dashboard
-                    SidebarItem(section: .dashboard, selected: $selected, hoverSection: $hoverSection, isScanning: false)
-                        .padding(.top, 8)
-
-                    SectionHeader(title: "CLEANING")
-                    ForEach(cleaningTools, id: \.self) { section in
-                        SidebarItem(section: section, selected: $selected, hoverSection: $hoverSection, isScanning: isScanning(section: section))
+                .coordinateSpace(name: "sidebarScroll")
+                .background(
+                    GeometryReader { visGeo in
+                        Color.clear
+                            .onChange(of: visGeo.size.height) { _, h in
+                                DispatchQueue.main.async { sidebarVisibleHeight = h }
+                            }
+                            .onAppear {
+                                DispatchQueue.main.async { sidebarVisibleHeight = visGeo.size.height }
+                            }
                     }
-
-                    SectionHeader(title: "PROTECTION")
-                    ForEach(protectionTools, id: \.self) { section in
-                        SidebarItem(section: section, selected: $selected, hoverSection: $hoverSection, isScanning: isScanning(section: section))
-                    }
-
-                    SectionHeader(title: "MANAGEMENT")
-                    ForEach(managementTools, id: \.self) { section in
-                        SidebarItem(section: section, selected: $selected, hoverSection: $hoverSection, isScanning: isScanning(section: section))
-                    }
-
-                    SectionHeader(title: "UTILITIES")
-                    ForEach(utilityTools, id: \.self) { section in
-                        SidebarItem(section: section, selected: $selected, hoverSection: $hoverSection, isScanning: isScanning(section: section))
+                )
+                .overlay(alignment: .bottom) {
+                    if canScrollDown {
+                        SidebarScrollArrow(direction: .down) {
+                            withAnimation(.easeInOut(duration: 0.3)) { proxy.scrollTo("bottom", anchor: .bottom) }
+                        }
+                        .transition(.opacity)
                     }
                 }
-                .padding(.horizontal, 12)
-                .padding(.bottom, 8)
+
             }
+            .frame(maxHeight: .infinity)
 
-            Spacer()
+            thinDivider.padding(.bottom, 4)
 
-            // Freed space badge
-            if scanEngine.totalFreedBytes > 0 {
-                HStack(spacing: 6) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundColor(AppTheme.success)
-                    Text(ByteCountFormatter.string(fromByteCount: scanEngine.totalFreedBytes, countStyle: .file) + " freed")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundColor(AppTheme.success)
-                    Spacer()
-                }
-                .padding(.horizontal, 18)
-                .padding(.bottom, 6)
-            }
-
-            Divider().padding(.horizontal, 14)
-
-            // Settings + Support row at bottom
-            HStack(spacing: 8) {
-                SidebarItem(section: .settings, selected: $selected, hoverSection: $hoverSection)
-                    .frame(maxWidth: .infinity)
-
-                SidebarCoffeeMiniButton()
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-
-            // Version footer
-            HStack {
-                Text("Free & Open Source")
-                    .font(.caption2)
-                    .foregroundColor(AppTheme.accent.opacity(0.8))
-                Spacer()
-            }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 10)
+            // Settings
+            SidebarIconButton(section: .settings, selected: $selected, hoverSection: $hoverSection, isScanning: false)
+                .padding(.bottom, 2)
+                
+            // Coffee Button
+            SidebarCoffeeButton()
+                .padding(.bottom, 14)
         }
-        .background(
-            VisualEffectView(material: .sidebar, blendingMode: .behindWindow)
+        .frame(width: 200)
+        .background(DS.bg)
+        .overlay(
+            Rectangle()
+                .fill(DS.borderSubtle)
+                .frame(width: 1),
+            alignment: .trailing
         )
+    }
+
+    private var thinDivider: some View {
+        Rectangle()
+            .fill(DS.borderSubtle)
+            .frame(height: 1)
+            .padding(.horizontal, 16)
     }
 }
 
-// MARK: - System Pill
-struct SystemPill: View {
-    let label: String
-    let value: String
-    let color: Color
+// MARK: - Sidebar Logo Button
+private struct SidebarLogoButton: View {
+    @Binding var selected: AppSection
     @State private var isHovered = false
+    private var theme: SectionTheme { SectionTheme.theme(for: selected) }
 
     var body: some View {
-        VStack(spacing: 2) {
-            Text(value)
-                .font(.system(size: 10, weight: .bold, design: .rounded))
-                .foregroundColor(color)
-            Text(label)
-                .font(.system(size: 8, weight: .medium))
-                .foregroundColor(.secondary)
+        Button {
+            withAnimation(Motion.std) { selected = .dashboard }
+        } label: {
+            HStack(spacing: 8) {
+                LogoView(size: 28, theme: theme)
+                    .shadow(color: theme.glow.opacity(isHovered ? 0.60 : 0.25), radius: isHovered ? 10 : 5)
+                
+                Text("MacSweep")
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .foregroundColor(DS.textPrimary)
+                Spacer()
+            }
+            .contentShape(Rectangle())
+            .scaleEffect(isHovered ? 1.02 : 1.0)
+            .animation(Motion.fast, value: isHovered)
+            .animation(Motion.fast, value: selected)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 5)
-        .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(color.opacity(isHovered ? 0.2 : 0.1))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 6)
-                .stroke(color.opacity(isHovered ? 0.35 : 0.15), lineWidth: 1)
-        )
-        .shadow(color: color.opacity(isHovered ? 0.25 : 0.0), radius: isHovered ? 8 : 0, y: 2)
-        .scaleEffect(isHovered ? 1.03 : 1.0)
+        .buttonStyle(.plain)
         .onHover { isHovered = $0 }
-        .animation(.easeOut(duration: 0.12), value: isHovered)
-        .help("\(label): \(value)")
+        .help("MacSweep — Dashboard")
     }
 }
 
-// MARK: - Sidebar Item
-struct SidebarItem: View {
+// MARK: - Sidebar Icon Button
+struct SidebarIconButton: View {
     let section: AppSection
     @Binding var selected: AppSection
     @Binding var hoverSection: AppSection?
     var isScanning: Bool = false
 
-    var isSelected: Bool { selected == section }
-    var isHovered: Bool { hoverSection == section }
+    @State private var isHovered = false
+
+    private var isSelected: Bool { selected == section }
+    private var theme: SectionTheme { SectionTheme.theme(for: section) }
+    private var glowColor: Color { theme.glow }
 
     var body: some View {
         Button {
-            withAnimation(.easeInOut(duration: 0.2)) {
-                selected = section
-            }
+            withAnimation(Motion.std) { selected = section }
         } label: {
             HStack(spacing: 12) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(
-                            isSelected
-                            ? AnyShapeStyle(AppTheme.sectionGradient(section))
-                            : AnyShapeStyle(Color.clear)
-                        )
-                        .frame(width: 28, height: 28)
+                    if isSelected {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(glowColor.opacity(0.18))
+                            .frame(width: 32, height: 32)
+                            .shadow(color: glowColor.opacity(0.35), radius: 8)
+                    } else if isHovered {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Color.white.opacity(0.06))
+                            .frame(width: 32, height: 32)
+                    }
+
                     Image(systemName: section.icon)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(isSelected ? .white : .secondary)
+                        .font(.system(size: 15, weight: isSelected ? .semibold : .regular))
+                        .foregroundColor(isSelected ? glowColor : DS.textMuted)
+                        .frame(width: 32, height: 32)
+
+                    if isScanning {
+                        Circle()
+                            .fill(DS.brandGreen)
+                            .frame(width: 6, height: 6)
+                            .shadow(color: DS.brandGreen.opacity(0.8), radius: 3)
+                            .offset(x: 10, y: -10)
+                    }
                 }
-                Text(section.rawValue)
-                    .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
-                    .foregroundColor(isSelected ? .primary : .secondary)
-                Spacer()
                 
-                if isScanning {
-                    Circle()
-                        .fill(AppTheme.success)
-                        .frame(width: 6, height: 6)
-                        .shadow(color: AppTheme.success.opacity(0.8), radius: 3)
-                        .opacity(isHovered || isSelected ? 1.0 : 0.7)
-                }
+                Text(section.rawValue)
+                    .font(.system(size: 13, weight: isSelected ? .medium : .regular))
+                    .foregroundColor(isSelected ? DS.textPrimary : DS.textSecondary)
+                
+                Spacer()
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(isSelected ? AppTheme.accent.opacity(0.1) : (isHovered ? Color.gray.opacity(0.08) : Color.clear))
-            )
-            .shadow(color: isHovered ? .black.opacity(0.1) : .clear, radius: isHovered ? 8 : 0, y: 2)
-            .scaleEffect(isHovered ? 1.01 : 1.0)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 4)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovering in
+            isHovered = hovering
             hoverSection = hovering ? section : nil
         }
-        .animation(.easeOut(duration: 0.12), value: isHovered)
+        .help(section.rawValue)
     }
 }
 
-// MARK: - Section Header
-struct SectionHeader: View {
-    let title: String
-    var body: some View {
-        Text(title)
-            .font(.system(size: 10, weight: .bold))
-            .foregroundColor(.secondary.opacity(0.6))
-            .tracking(1.2)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.leading, 12)
-            .padding(.top, 16)
-            .padding(.bottom, 4)
-    }
-}
-
-private struct SidebarCoffeeMiniButton: View {
+// MARK: - Sidebar Coffee Button
+struct SidebarCoffeeButton: View {
     @State private var isHovered = false
+    private let url = URL(string: "https://ko-fi.com/mehmedhunjra")!
 
     var body: some View {
         Button {
-            guard let url = URL(string: "https://ko-fi.com/mehmedhunjra") else { return }
             NSWorkspace.shared.open(url)
         } label: {
-            Image(systemName: "cup.and.saucer.fill")
-                .font(.system(size: 12, weight: .bold))
-                .foregroundColor(AppTheme.supportText)
-                .frame(width: 34, height: 34)
-                .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(AppTheme.supportGradient)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(Color.white.opacity(0.42), lineWidth: 1)
-                )
-                .shadow(color: Color(hex: "FFCA28").opacity(isHovered ? 0.4 : 0.2), radius: isHovered ? 12 : 7, y: 3)
-                .scaleEffect(isHovered ? 1.05 : 1.0)
-                .animation(.easeOut(duration: 0.12), value: isHovered)
+            HStack(spacing: 12) {
+                ZStack {
+                    if isHovered {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Color.white.opacity(0.06))
+                            .frame(width: 32, height: 32)
+                    }
+
+                    Image(systemName: "cup.and.saucer.fill")
+                        .font(.system(size: 15, weight: .regular))
+                        .foregroundColor(isHovered ? DS.brandGreen : DS.textMuted)
+                        .frame(width: 32, height: 32)
+                }
+                
+                Text("Buy me a Coffee")
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundColor(DS.textSecondary)
+                
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 4)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
-        .help("Buy Me a Coffee")
+        .help("Support MacSweep")
     }
 }
 
-// MARK: - Disk Widget
-struct DiskWidget: View {
-    let disk: DiskInfo
-    @State private var isHovered = false
-
-    var usageColor: Color {
-        if disk.usedPercentage > 0.9 { return AppTheme.danger }
-        if disk.usedPercentage > 0.75 { return AppTheme.warning }
-        return AppTheme.accent
-    }
-
-    var body: some View {
-        VStack(spacing: 10) {
-            HStack {
-                Image(systemName: "internaldrive.fill")
-                    .foregroundColor(usageColor)
-                    .font(.caption)
-                Text("Macintosh HD")
-                    .font(.caption.bold())
-                Spacer()
-                Text(disk.freeFormatted + " available")
-                    .font(.caption2.bold())
-                    .foregroundColor(usageColor)
-            }
-
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(Color.gray.opacity(0.15))
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(
-                            LinearGradient(
-                                colors: [usageColor, usageColor.opacity(0.7)],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .frame(width: geo.size.width * disk.usedPercentage)
-                }
-            }
-            .frame(height: 6)
-
-            HStack {
-                Text("\(disk.usedFormatted) used")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-                Spacer()
-                Text("\(disk.totalFormatted) total")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-            }
-        }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color(NSColor.windowBackgroundColor).opacity(isHovered ? 0.78 : 0.6),
-                            usageColor.opacity(isHovered ? 0.12 : 0.03)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(usageColor.opacity(isHovered ? 0.35 : 0.16), lineWidth: 1)
-        )
-        .shadow(color: usageColor.opacity(isHovered ? 0.22 : 0), radius: isHovered ? 12 : 0, y: 3)
-        .scaleEffect(isHovered ? 1.01 : 1.0)
-        .onHover { isHovered = $0 }
-        .animation(.easeOut(duration: 0.14), value: isHovered)
-        .help("Used: \(disk.usedFormatted) of \(disk.totalFormatted). Free: \(disk.freeFormatted).")
-    }
-}
-
-// MARK: - Visual Effect View
+// MARK: - Visual Effect View (kept for other uses)
 struct VisualEffectView: NSViewRepresentable {
     let material: NSVisualEffectView.Material
     let blendingMode: NSVisualEffectView.BlendingMode
@@ -390,70 +352,178 @@ struct VisualEffectView: NSViewRepresentable {
     }
 }
 
-// MARK: - Logo View (Brand Logo from PNG)
+// MARK: - Logo View
 struct LogoView: View {
     var size: CGFloat = 40
+    var theme: SectionTheme? = nil
 
     var body: some View {
-        Image("BrandLogo")
-            .resizable()
-            .renderingMode(.original)
-            .aspectRatio(contentMode: .fit)
-            .frame(width: size, height: size)
-            .clipShape(RoundedRectangle(cornerRadius: size * 0.22))
+        ZStack {
+            if let theme {
+                Image("MenuBarIcon")
+                    .resizable()
+                    .renderingMode(.template)
+                    .foregroundStyle(theme.linearGradient)
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: size, height: size)
+            } else {
+                Image("BrandLogo")
+                    .resizable()
+                    .renderingMode(.original)
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: size, height: size)
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: size * 0.22))
     }
 }
 
-// MARK: - MacSweep Icon Shape (matches SVG logo)
-struct MacSweepIconShape: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let w = rect.width
-        let h = rect.height
 
-        // Simplified version of the SVG "M" sweep path
-        // Left vertical bar of M
-        path.move(to: CGPoint(x: w * 0.05, y: h * 0.95))
-        path.addLine(to: CGPoint(x: w * 0.05, y: h * 0.05))
-        path.addLine(to: CGPoint(x: w * 0.18, y: h * 0.05))
+// MARK: - Disk Widget (kept for Dashboard use)
+struct DiskWidget: View {
+    let disk: DiskInfo
+    @State private var isHovered = false
 
-        // First diagonal up-stroke
-        path.addLine(to: CGPoint(x: w * 0.35, y: h * 0.55))
+    var usageColor: Color {
+        if disk.usedPercentage > 0.9 { return DS.danger }
+        if disk.usedPercentage > 0.75 { return DS.warning }
+        return DS.brandGreen
+    }
 
-        // Inner V
-        path.addLine(to: CGPoint(x: w * 0.50, y: h * 0.05))
-        path.addLine(to: CGPoint(x: w * 0.50, y: h * 0.05))
+    var body: some View {
+        VStack(spacing: 10) {
+            HStack {
+                Image(systemName: "internaldrive.fill")
+                    .foregroundColor(usageColor)
+                    .font(.caption)
+                Text("Macintosh HD")
+                    .font(.caption.bold())
+                    .foregroundColor(DS.textPrimary)
+                Spacer()
+                Text(disk.freeFormatted + " free")
+                    .font(.caption2.bold())
+                    .foregroundColor(usageColor)
+            }
 
-        // Second bar top
-        path.addLine(to: CGPoint(x: w * 0.62, y: h * 0.05))
-        path.addLine(to: CGPoint(x: w * 0.62, y: h * 0.65))
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(DS.bgElevated)
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(LinearGradient(
+                            colors: [usageColor, usageColor.opacity(0.7)],
+                            startPoint: .leading, endPoint: .trailing
+                        ))
+                        .frame(width: geo.size.width * disk.usedPercentage)
+                }
+            }
+            .frame(height: 6)
 
-        // Big sweep curve to the right (the signature "sweep" of MacSweep)
-        path.addCurve(
-            to: CGPoint(x: w * 0.95, y: h * 0.35),
-            control1: CGPoint(x: w * 0.68, y: h * 0.65),
-            control2: CGPoint(x: w * 0.92, y: h * 0.60)
+            HStack {
+                Text("\(disk.usedFormatted) used")
+                    .font(.caption2)
+                    .foregroundColor(DS.textSecondary)
+                Spacer()
+                Text("\(disk.totalFormatted) total")
+                    .font(.caption2)
+                    .foregroundColor(DS.textSecondary)
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(DS.bgPanel)
         )
-        // Top of sweep
-        path.addCurve(
-            to: CGPoint(x: w * 0.72, y: h * 0.15),
-            control1: CGPoint(x: w * 0.98, y: h * 0.15),
-            control2: CGPoint(x: w * 0.85, y: h * 0.10)
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(usageColor.opacity(isHovered ? 0.35 : 0.14), lineWidth: 1)
         )
-        // Return sweep down
-        path.addCurve(
-            to: CGPoint(x: w * 0.62, y: h * 0.40),
-            control1: CGPoint(x: w * 0.65, y: h * 0.18),
-            control2: CGPoint(x: w * 0.62, y: h * 0.30)
-        )
+        .shadow(color: usageColor.opacity(isHovered ? 0.20 : 0), radius: isHovered ? 10 : 0, y: 3)
+        .scaleEffect(isHovered ? 1.01 : 1.0)
+        .onHover { isHovered = $0 }
+        .animation(Motion.fast, value: isHovered)
+        .help("Used: \(disk.usedFormatted) of \(disk.totalFormatted). Free: \(disk.freeFormatted).")
+    }
+}
 
-        // Close the left bar
-        path.addLine(to: CGPoint(x: w * 0.50, y: h * 0.40))
-        path.addLine(to: CGPoint(x: w * 0.35, y: h * 0.85))
-        path.addLine(to: CGPoint(x: w * 0.18, y: h * 0.35))
-        path.addLine(to: CGPoint(x: w * 0.18, y: h * 0.95))
-        path.closeSubpath()
+// MARK: - Scroll Preference Keys
 
-        return path
+private struct SidebarScrollOffsetKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+private struct SidebarContentHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+// MARK: - Sidebar Scroll Arrow
+
+private struct SidebarScrollArrow: View {
+    enum Direction { case up, down }
+    let direction: Direction
+    var action: () -> Void = {}
+    @State private var bounce = false
+
+    var body: some View {
+        Button(action: action) {
+        VStack(spacing: 0) {
+            if direction == .down {
+                // Gradient fade above pill
+                LinearGradient(
+                    colors: [Color.clear, DS.bg],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: 24)
+            }
+
+            HStack(spacing: 4) {
+                Image(systemName: direction == .down ? "chevron.down" : "chevron.up")
+                    .font(.system(size: 10, weight: .heavy))
+                Text(direction == .down ? "More" : "Back to top")
+                    .font(.system(size: 9, weight: .bold))
+            }
+            .foregroundColor(DS.brandTeal)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 5)
+            .background(
+                Capsule()
+                    .fill(DS.brandTeal.opacity(0.15))
+                    .overlay(Capsule().stroke(DS.brandTeal.opacity(0.4), lineWidth: 0.5))
+            )
+            .offset(y: bounce ? (direction == .down ? 2 : -2) : 0)
+            .animation(
+                .easeInOut(duration: 0.9).repeatForever(autoreverses: true),
+                value: bounce
+            )
+            .padding(.bottom, direction == .down ? 6 : 0)
+            .padding(.top, direction == .up ? 6 : 0)
+
+            if direction == .up {
+                // Gradient fade below pill
+                LinearGradient(
+                    colors: [DS.bg, Color.clear],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: 24)
+            }
+        }
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity)
+        .allowsHitTesting(true)
+        .onAppear {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                bounce = true
+            }
+        }
     }
 }

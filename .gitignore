@@ -1,18 +1,57 @@
-# macOS
+# ── macOS metadata ───────────────────────────────────────────
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+.AppleDouble
+.LSOverride
 
-# Xcode user-specific files
+# ── Xcode user data ──────────────────────────────────────────
 xcuserdata/
 *.xcuserstate
 *.xcscmblueprint
 *.xccheckout
+*.moved-aside
+*.orig
+DerivedData/
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
 
-# Build artifacts
+# ── Xcode workspace session files ───────────────────────────
+MacSweep.xcodeproj/project.xcworkspace/
+MacSweep.xcodeproj/xcuserdata/
+
+# ── Swift Package Manager ────────────────────────────────────
+.build/
+.swiftpm/
+Packages/
+
+# ── Build outputs ────────────────────────────────────────────
 build/
 dist/
-DerivedData/
-.build/
+*.dmg
+*.pkg
 
-# Logs and temporary files
+# ── Logs and temp ────────────────────────────────────────────
 *.log
 *.tmp
+build_output.txt
+
+# ── Packaging/fix scripts (build-time only) ──────────────────
+fix_dupes.rb
+fix_dupes2.rb
+fix_paths.rb
+fix_paths_absolute.rb
+fix_pbxproj.rb
+generate-dmg-bg.py
+dmg-resources/
+OPEN_APP.command
+build-dmg.sh
+
+# ── Python cache ─────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo

@@ -7,24 +7,55 @@ struct MemoryOptimizerView: View {
     @State private var showKillConfirm = false
     @State private var processToKill: AppProcessInfo?
     
+    @Binding var selectedTab: Int
+    @EnvironmentObject var navManager: NavigationManager
+    @State private var scanRotation: Double = 0
+    @State private var gaugeHovered = false
+
     var body: some View {
         VStack(spacing: 0) {
-            // Memory Overview
-            memoryOverview
-            
-            Divider()
-            
-            // Process List
-            processListView
-            
-            Divider()
-            
-            // Footer
-            memoryFooter
+            headerWithBackButton
+
+            if !engine.hasScanned && !engine.isScanning {
+                ToolLandingView(
+                    section: .memoryOptimizer,
+                    subtitle: "Analyze your Mac's RAM usage and\nforce quit memory-heavy apps.",
+                    actionLabel: "Analyze Memory",
+                    onAction: {
+                        engine.scan()
+                    }
+                )
+            } else if engine.isScanning {
+                ToolScanningView(
+                    section: .memoryOptimizer,
+                    scanningTitle: "Analyzing Memory...",
+                    currentPath: .constant("Gathering active processes and measuring pressure..."),
+                    onStop: {
+                        engine.cancelScan()
+                        selectedTab = 0
+                    }
+                )
+            } else {
+                // Memory Overview
+                memoryOverview
+                
+                Divider()
+                
+                // Process List
+                processListView
+                
+                Divider()
+                
+                // Footer
+                memoryFooter
+            }
         }
-        .background(Color(NSColor.controlBackgroundColor))
-        .onAppear { engine.startMonitoring() }
-        .onDisappear { engine.stopMonitoring() }
+        .background(DS.bg)
+        .onAppear {
+            if engine.hasScanned {
+                engine.startMonitoring()
+            }
+        }
         .alert("Quit Process?", isPresented: $showKillConfirm) {
             Button("Cancel", role: .cancel) {}
             Button("Force Quit", role: .destructive) {
@@ -36,6 +67,64 @@ struct MemoryOptimizerView: View {
             Text("Force quitting \"\(processToKill?.name ?? "")\" may cause data loss. Are you sure?")
         }
     }
+
+    var headerWithBackButton: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 16) {
+                HStack(spacing: 8) {
+                    Button {
+                        if engine.isScanning {
+                            engine.cancelScan()
+                        }
+                        // Prefer resetting any in-tool state before leaving the section.
+                        if selectedTab != 0 {
+                            selectedTab = 0
+                            return
+                        }
+                        if !navManager.goBackInCurrentSection() {
+                            navManager.goBack()
+                        }
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor((navManager.canGoBackInCurrentSection || navManager.canGoBack || selectedTab != 0) ? DS.textSecondary : DS.textMuted.opacity(0.5))
+                            .frame(width: 32, height: 32)
+                            .background((navManager.canGoBackInCurrentSection || navManager.canGoBack || selectedTab != 0) ? DS.bgElevated : DS.bgElevated.opacity(0.5))
+                            .clipShape(Circle())
+                            .overlay(Circle().strokeBorder(DS.borderSubtle, lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!(navManager.canGoBackInCurrentSection || navManager.canGoBack || selectedTab != 0))
+
+                    Button {
+                        if !navManager.goForwardInCurrentSection() {
+                            navManager.goForward()
+                        }
+                    } label: {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor((navManager.canGoForwardInCurrentSection || navManager.canGoForward) ? DS.textSecondary : DS.textMuted.opacity(0.5))
+                            .frame(width: 32, height: 32)
+                            .background((navManager.canGoForwardInCurrentSection || navManager.canGoForward) ? DS.bgElevated : DS.bgElevated.opacity(0.5))
+                            .clipShape(Circle())
+                            .overlay(Circle().strokeBorder(DS.borderSubtle, lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!(navManager.canGoForwardInCurrentSection || navManager.canGoForward))
+                }
+
+                Text("Memory Optimizer")
+                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .foregroundColor(DS.textPrimary)
+
+                Spacer()
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 16)
+
+            Divider().background(DS.borderSubtle)
+        }
+    }
     
     // MARK: - Memory Overview
     var memoryOverview: some View {
@@ -44,8 +133,9 @@ struct MemoryOptimizerView: View {
                 // Circular gauge
                 ZStack {
                     Circle()
-                        .stroke(Color.gray.opacity(0.15), lineWidth: 8)
+                        .stroke(DS.borderSubtle, lineWidth: 8)
                         .frame(width: 80, height: 80)
+
                     Circle()
                         .trim(from: 0, to: engine.memoryPressure)
                         .stroke(
@@ -54,56 +144,91 @@ struct MemoryOptimizerView: View {
                         )
                         .frame(width: 80, height: 80)
                         .rotationEffect(.degrees(-90))
-                        .animation(.spring(duration: 0.5), value: engine.memoryPressure)
+                        .animation(Motion.slow, value: engine.memoryPressure)
+                        .shadow(color: pressureGradient.first?.opacity(gaugeHovered ? 0.65 : 0.4) ?? .clear, radius: gaugeHovered ? 14 : 6)
+                        .scaleEffect(gaugeHovered ? 1.07 : 1.0)
+                        .animation(Motion.fast, value: gaugeHovered)
+
+                    // Sweeping Scan Animation
+                    if engine.isScanning || engine.isFreeingMemory {
+                        Circle()
+                            .trim(from: 0, to: 0.25)
+                            .stroke(
+                                AngularGradient(colors: [pressureGradient.first ?? .clear, .clear], center: .center),
+                                style: StrokeStyle(lineWidth: 8, lineCap: .round)
+                            )
+                            .frame(width: 80, height: 80)
+                            .rotationEffect(.degrees(scanRotation))
+                            .onAppear {
+                                withAnimation(.linear(duration: 1.5).repeatForever(autoreverses: false)) {
+                                    scanRotation = 360
+                                }
+                            }
+                    }
+
                     VStack(spacing: 0) {
                         Text("\(Int(engine.memoryPressure * 100))%")
                             .font(.system(size: 18, weight: .bold, design: .rounded))
+                            .foregroundColor(DS.textPrimary)
                         Text("used")
-                            .font(.system(size: 9))
-                            .foregroundColor(.secondary)
+                            .font(MSFont.mono)
+                            .foregroundColor(DS.textMuted)
                     }
                 }
-                
+                .onHover { gaugeHovered = $0 }
+                .overlay(alignment: .top) {
+                    if gaugeHovered {
+                        MemoryGaugeTooltip(engine: engine, gradient: pressureGradient)
+                            .offset(y: -112)
+                            .zIndex(999)
+                            .allowsHitTesting(false)
+                            .transition(.opacity.combined(with: .scale(scale: 0.92, anchor: .bottom)))
+                            .animation(Motion.fast, value: gaugeHovered)
+                    }
+                }
+
                 // Stats
                 VStack(alignment: .leading, spacing: 6) {
-                    memStat(label: "Used", value: engine.usedMemory, color: Color(hex: "FF6B6B"))
-                    memStat(label: "Wired", value: engine.wiredMemory, color: Color(hex: "FFA502"))
-                    memStat(label: "Compressed", value: engine.compressedMemory, color: Color(hex: "7C4DFF"))
-                    memStat(label: "Free", value: engine.freeMemoryStr, color: AppTheme.success)
+                    memStat(label: "Used", value: engine.usedMemory, color: DS.danger)
+                    memStat(label: "Wired", value: engine.wiredMemory, color: DS.warning)
+                    memStat(label: "Compressed", value: engine.compressedMemory, color: Color(hex: "9B4DFF"))
+                    memStat(label: "Free", value: engine.freeMemoryStr, color: DS.success)
                 }
-                
+
                 Spacer()
-                
+
                 // Total RAM
                 VStack(alignment: .trailing, spacing: 4) {
                     Text(engine.totalMemoryFormatted)
                         .font(.system(size: 24, weight: .bold, design: .rounded))
-                        .foregroundColor(.primary)
+                        .foregroundColor(DS.textPrimary)
                     Text("Total RAM")
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
+                        .font(MSFont.caption)
+                        .foregroundColor(DS.textMuted)
                 }
             }
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 16)
+        .background(DS.bgPanel)
     }
     
     var pressureGradient: [Color] {
-        if engine.memoryPressure > 0.85 { return [Color(hex: "FF416C"), Color(hex: "FF4B2B")] }
-        if engine.memoryPressure > 0.65 { return [Color(hex: "F7971E"), Color(hex: "FFD200")] }
-        return [AppTheme.success, Color(hex: "38EF7D")]
+        if engine.memoryPressure > 0.85 { return [DS.danger, Color(hex: "FF4B2B")] }
+        if engine.memoryPressure > 0.65 { return [DS.warning, Color(hex: "FFD200")] }
+        return [DS.success, DS.brandTeal]
     }
-    
+
     func memStat(label: String, value: String, color: Color) -> some View {
         HStack(spacing: 8) {
             Circle().fill(color).frame(width: 8, height: 8)
             Text(label)
-                .font(.system(size: 11))
-                .foregroundColor(.secondary)
+                .font(MSFont.caption)
+                .foregroundColor(DS.textMuted)
                 .frame(width: 70, alignment: .leading)
             Text(value)
                 .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .foregroundColor(DS.textPrimary)
         }
     }
     
@@ -113,18 +238,19 @@ struct MemoryOptimizerView: View {
             // Header
             HStack {
                 Text("Top Processes by Memory")
-                    .font(.system(size: 13, weight: .bold))
+                    .font(MSFont.headline)
+                    .foregroundColor(DS.textPrimary)
                 Spacer()
                 Text("\(engine.processes.count) processes")
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
+                    .font(MSFont.caption)
+                    .foregroundColor(DS.textMuted)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
-            .background(Color(NSColor.controlBackgroundColor))
-            
-            Divider()
-            
+            .background(DS.bgPanel)
+
+            Rectangle().fill(DS.borderSubtle).frame(height: 1)
+
             // Column headers
             HStack(spacing: 0) {
                 Text("Process")
@@ -137,13 +263,13 @@ struct MemoryOptimizerView: View {
                     .frame(width: 60)
             }
             .font(.system(size: 10, weight: .semibold))
-            .foregroundColor(.secondary)
+            .foregroundColor(DS.textMuted)
             .padding(.horizontal, 16)
             .padding(.vertical, 6)
-            .background(Color(NSColor.windowBackgroundColor).opacity(0.5))
-            
-            Divider()
-            
+            .background(DS.bgPanel)
+
+            Rectangle().fill(DS.borderSubtle).frame(height: 1)
+
             ScrollView(showsIndicators: false) {
                 LazyVStack(spacing: 0) {
                     ForEach(engine.processes) { proc in
@@ -151,10 +277,11 @@ struct MemoryOptimizerView: View {
                             processToKill = proc
                             showKillConfirm = true
                         }
-                        Divider().padding(.leading, 16)
+                        Rectangle().fill(DS.borderSubtle).frame(height: 1).padding(.leading, 16)
                     }
                 }
             }
+            .background(DS.bg)
         }
     }
     
@@ -164,42 +291,54 @@ struct MemoryOptimizerView: View {
             Button {
                 engine.refreshProcesses()
             } label: {
-                Label("Refresh", systemImage: "arrow.clockwise")
-                    .font(.system(size: 12, weight: .medium))
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 7)
-                    .background(Color(NSColor.controlBackgroundColor))
-                    .cornerRadius(8)
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.clockwise")
+                    Text("Refresh")
+                }
+                .font(MSFont.caption)
+                .foregroundColor(DS.textSecondary)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 7)
+                .background(DS.bgElevated)
+                .clipShape(Capsule())
             }
             .buttonStyle(.plain)
-            
+
             Spacer()
-            
+
             Text("Auto-refreshes every 5s")
-                .font(.system(size: 10))
-                .foregroundColor(.secondary)
-            
+                .font(MSFont.caption)
+                .foregroundColor(DS.textMuted)
+
             Button {
                 engine.freeUpMemory()
             } label: {
                 HStack(spacing: 6) {
-                    Image(systemName: "memorychip")
-                    Text("Free Memory")
+                    if engine.isFreeingMemory {
+                        ProgressView().scaleEffect(0.6).tint(.white)
+                    } else {
+                        Image(systemName: "memorychip")
+                    }
+                    Text(engine.isFreeingMemory ? "Freeing..." : "Free Memory")
                 }
-                .font(.system(size: 13, weight: .semibold))
+                .font(MSFont.headline)
                 .foregroundColor(.white)
                 .padding(.horizontal, 20)
                 .padding(.vertical, 9)
                 .background(
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(LinearGradient(colors: [Color(hex: "667EEA"), Color(hex: "764BA2")],
-                                             startPoint: .leading, endPoint: .trailing))
+                    Capsule()
+                        .fill(LinearGradient(
+                            colors: SectionTheme.theme(for: .memoryOptimizer).gradient,
+                            startPoint: .leading, endPoint: .trailing
+                        ))
                 )
             }
             .buttonStyle(.plain)
+            .disabled(engine.isFreeingMemory)
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
+        .background(DS.bgPanel)
     }
 }
 
@@ -235,7 +374,7 @@ struct ProcessRow: View {
             
             Text(process.memoryFormatted)
                 .font(.system(size: 11, weight: .medium, design: .monospaced))
-                .foregroundColor(process.memoryMB > 500 ? Color(hex: "FF6B6B") : .primary)
+                .foregroundColor(process.memoryMB > 500 ? DS.danger : DS.textPrimary)
                 .frame(width: 75, alignment: .trailing)
             
             Group {
@@ -255,10 +394,10 @@ struct ProcessRow: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 6)
-        .background(hovered ? Color.gray.opacity(0.06) : Color.clear)
+        .background(hovered ? DS.bgElevated : Color.clear)
         .contentShape(Rectangle())
         .onHover { hovered = $0 }
-        .animation(.easeOut(duration: 0.1), value: hovered)
+        .animation(Motion.fast, value: hovered)
     }
 }
 
@@ -273,12 +412,46 @@ class MemoryEngine: ObservableObject {
     @Published var freeMemoryStr: String = "0 GB"
     @Published var totalMemoryFormatted: String = "0 GB"
     
+    @Published var isScanning = false
+    @Published var hasScanned = false
+    @Published var isFreeingMemory = false
+
     private var timer: Timer?
-    
+    private var scanTask: Task<Void, Never>?
+
+    func scan() {
+        scanTask?.cancel()
+        stopMonitoring()
+        isScanning = true
+        hasScanned = false
+        scanTask = Task {
+            let procs = await Task.detached(priority: .userInitiated) {
+                Self.getTopProcesses()
+            }.value
+            if Task.isCancelled { return }
+            self.updateMemoryStats()
+            self.processes = procs
+            self.isScanning = false
+            self.hasScanned = true
+            self.scanTask = nil
+            self.startMonitoring()
+        }
+    }
+
+    func cancelScan() {
+        scanTask?.cancel()
+        scanTask = nil
+        stopMonitoring()
+        isScanning = false
+        hasScanned = false
+        processes = []
+    }
+
     func startMonitoring() {
+        timer?.invalidate()
         updateMemoryStats()
         refreshProcesses()
-        timer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.updateMemoryStats()
                 self?.refreshProcesses()
@@ -322,45 +495,51 @@ class MemoryEngine: ObservableObject {
         memoryPressure = CGFloat(used) / CGFloat(totalRAM)
     }
     
+    @MainActor
     func refreshProcesses() {
-        Task {
-            let procs = await Task.detached(priority: .userInitiated) {
-                Self.getTopProcesses()
-            }.value
-            processes = procs
+        Task.detached(priority: .userInitiated) {
+            let procs = Self.getTopProcesses()
+            await MainActor.run { [weak self] in
+                self?.processes = procs
+            }
         }
     }
     
     nonisolated static func getTopProcesses() -> [AppProcessInfo] {
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/bin/ps")
-        task.arguments = ["-axo", "pid,rss,comm", "-r"]
+        task.arguments = ["-axo", "pid=,rss=,comm=", "-r"]
         let pipe = Pipe()
         task.standardOutput = pipe
         task.standardError = FileHandle.nullDevice
-        
+        let sema = DispatchSemaphore(value: 0)
+        task.terminationHandler = { _ in sema.signal() }
         do {
             try task.run()
-            task.waitUntilExit()
         } catch { return [] }
-        
+        if sema.wait(timeout: .now() + 4.0) == .timedOut {
+            task.terminate()
+            return []
+        }
         let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
         var results: [AppProcessInfo] = []
         
-        for line in output.components(separatedBy: "\n").dropFirst() {
+        for line in output.components(separatedBy: "\n") {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             guard !trimmed.isEmpty else { continue }
-            let parts = trimmed.split(separator: " ", maxSplits: 2)
+            
+            // Parse: PID RSS COMMAND (space-separated, command can contain spaces)
+            let parts = trimmed.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: true)
             guard parts.count >= 3,
                   let pid = Int32(parts[0]),
                   let rssKB = Int64(parts[1]) else { continue }
             
-            let name = String(parts[2]).components(separatedBy: "/").last ?? String(parts[2])
+            let fullPath = String(parts[2])
+            let name = fullPath.components(separatedBy: "/").last ?? fullPath
             let memoryMB = Double(rssKB) / 1024.0
             guard memoryMB > 10 else { continue } // Only show processes > 10 MB
             
-            let icon = NSRunningApplication.runningApplications(withBundleIdentifier: "").isEmpty ? nil :
-                NSWorkspace.shared.runningApplications.first(where: { $0.processIdentifier == pid })?.icon
+            let icon = NSWorkspace.shared.runningApplications.first(where: { $0.processIdentifier == pid })?.icon
             
             results.append(AppProcessInfo(
                 pid: pid,
@@ -381,15 +560,87 @@ class MemoryEngine: ObservableObject {
     }
     
     func freeUpMemory() {
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/purge")
-        task.standardOutput = FileHandle.nullDevice
-        task.standardError = FileHandle.nullDevice
-        try? task.run()
+        isFreeingMemory = true
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            self.updateMemoryStats()
+        Task.detached(priority: .userInitiated) {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+            let script = "do shell script \"/usr/sbin/purge\" with administrator privileges"
+            process.arguments = ["-e", script]
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+            let sema = DispatchSemaphore(value: 0)
+            process.terminationHandler = { _ in sema.signal() }
+            do { 
+                try process.run() 
+                var slept = 0
+                while process.isRunning && slept < 300 {
+                    try? await Task.sleep(nanoseconds: 100_000_000)
+                    slept += 1
+                }
+            } catch {}
+            if process.isRunning { process.terminate() }
+
+            await MainActor.run {
+                self.isFreeingMemory = false
+                self.updateMemoryStats()
+            }
         }
+    }
+}
+
+// MARK: - Memory Gauge Tooltip
+private struct MemoryGaugeTooltip: View {
+    let engine: MemoryEngine
+    let gradient: [Color]
+
+    private var accentColor: Color { gradient.first ?? DS.brandGreen }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 8) {
+                Circle().fill(DS.danger).frame(width: 6, height: 6)
+                Text("Used").font(MSFont.caption).foregroundColor(DS.textMuted)
+                Spacer(minLength: 8)
+                Text(engine.usedMemory).font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundColor(DS.danger)
+            }
+            HStack(spacing: 8) {
+                Circle().fill(DS.warning).frame(width: 6, height: 6)
+                Text("Wired").font(MSFont.caption).foregroundColor(DS.textMuted)
+                Spacer(minLength: 8)
+                Text(engine.wiredMemory).font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundColor(DS.warning)
+            }
+            HStack(spacing: 8) {
+                Circle().fill(Color(hex: "9B4DFF")).frame(width: 6, height: 6)
+                Text("Compressed").font(MSFont.caption).foregroundColor(DS.textMuted)
+                Spacer(minLength: 8)
+                Text(engine.compressedMemory).font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundColor(Color(hex: "9B4DFF"))
+            }
+            HStack(spacing: 8) {
+                Circle().fill(DS.success).frame(width: 6, height: 6)
+                Text("Free").font(MSFont.caption).foregroundColor(DS.textMuted)
+                Spacer(minLength: 8)
+                Text(engine.freeMemoryStr).font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundColor(DS.success)
+            }
+            Rectangle().fill(DS.borderSubtle).frame(height: 1).padding(.vertical, 2)
+            HStack(spacing: 8) {
+                Circle().fill(accentColor).frame(width: 6, height: 6)
+                Text("Pressure").font(MSFont.caption).foregroundColor(DS.textMuted)
+                Spacer(minLength: 8)
+                Text("\(Int(engine.memoryPressure * 100))%")
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .foregroundColor(accentColor)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .frame(minWidth: 180)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(DS.bgElevated)
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(DS.borderMid, lineWidth: 1))
+        )
+        .shadow(color: .black.opacity(0.4), radius: 12, y: 6)
     }
 }
 

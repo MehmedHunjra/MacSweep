@@ -44,6 +44,8 @@ struct ApplicationsManagerView: View {
     @State private var showBatchScratchConfirm = false
     @State private var scratchRefreshId = UUID()
 
+    @EnvironmentObject var navManager: NavigationManager
+
     var filteredApps: [InstalledApp] {
         var apps = engine.apps
 
@@ -100,6 +102,13 @@ struct ApplicationsManagerView: View {
         VStack(spacing: 0) {
             if !engine.isScanning && !engine.hasScanned {
                 landingScreen
+            } else if engine.isScanning {
+                ToolScanningView(
+                    section: .applications,
+                    scanningTitle: "Scanning Applications...",
+                    currentPath: $engine.currentScanPath,
+                    onStop: { engine.cancelScan() }
+                )
             } else {
                 appsHeader
                 Divider()
@@ -116,7 +125,17 @@ struct ApplicationsManagerView: View {
                 appsFooter
             }
         }
-        .background(Color(NSColor.controlBackgroundColor))
+        .background(DS.bg)
+        .onChange(of: navManager.currentState) { _, newState in
+            if newState.section == .applications {
+                if newState.subState == nil || newState.subState == "landing" {
+                    engine.hasScanned = false
+                    engine.cancelScan()
+                } else if newState.subState == "scanning" {
+                    engine.hasScanned = true
+                }
+            }
+        }
         .alert("Action Complete", isPresented: $showResult) {
             Button("OK") { engine.scanAll() }
         } message: {
@@ -126,98 +145,149 @@ struct ApplicationsManagerView: View {
 
     // MARK: - Landing
     private var landingScreen: some View {
-        ZStack {
-            LinearGradient(
-                colors: [Color(hex: "06122C"), Color(hex: "0A244D"), Color(hex: "0F3C7E"), Color(hex: "06122C")],
-                startPoint: .top, endPoint: .bottom
-            )
-
-            VStack(spacing: 0) {
-                Spacer()
-
-                // 3D Glass Icon for Apps
-                ZStack {
-                    RoundedRectangle(cornerRadius: 32)
-                        .fill(LinearGradient(colors: [Color(hex: "6A11CB").opacity(0.6), Color(hex: "2575FC").opacity(0.4)], startPoint: .topLeading, endPoint: .bottomTrailing))
-                        .frame(width: 120, height: 120)
-                        .shadow(color: Color(hex: "6A11CB").opacity(0.4), radius: 30, y: 8)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 32)
-                                .strokeBorder(Color.white.opacity(0.15), lineWidth: 1)
-                        )
-
-                    Image(systemName: "square.stack.3d.up.fill")
-                        .font(.system(size: 50, weight: .semibold))
-                        .foregroundStyle(LinearGradient(colors: [.white, Color(hex: "E0C3FC")], startPoint: .topLeading, endPoint: .bottomTrailing))
-                }
-                .padding(.bottom, 28)
-
-                Text("Applications")
-                    .font(.system(size: 32, weight: .bold, design: .rounded))
-                    .foregroundColor(.white)
-                    .padding(.bottom, 8)
-
-                Text("Completely uninstall apps and their hidden leftovers,\nor reset them to their original state.")
-                    .font(.system(size: 14))
-                    .foregroundColor(.white.opacity(0.5))
-                    .multilineTextAlignment(.center)
-                    .lineSpacing(3)
-                    .padding(.bottom, 48)
-
-                ToolPrimaryActionButton(
-                    title: "Scan",
-                    colors: [Color(hex: "6A11CB"), Color(hex: "2575FC")],
-                    icon: "sparkles"
-                ) {
+        VStack(spacing: 0) {
+            landingHeader
+            ToolLandingView(
+                section: .applications,
+                subtitle: "Completely uninstall apps and their hidden leftovers,\nor reset them to their original state.",
+                actionLabel: "Scan",
+                onAction: {
                     engine.hasScanned = true
+                    navManager.navigate(to: .applications, subState: "scanning")
                     engine.scanAll()
                 }
+            )
+        }
+    }
 
+    private var landingHeader: some View {
+        VStack(spacing: 0) {
+            HStack {
+                HStack(spacing: 8) {
+                    Button {
+                        if !navManager.goBackToPreviousSection() {
+                            navManager.goBack()
+                        }
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(navManager.canGoBack ? DS.textSecondary : DS.textMuted.opacity(0.3))
+                            .frame(width: 32, height: 32)
+                            .background(DS.bgElevated.opacity(0.6))
+                            .overlay(Circle().strokeBorder(DS.borderSubtle, lineWidth: 1))
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!navManager.canGoBack)
+
+                    Button {
+                        if !navManager.goForwardToNextSection() {
+                            navManager.goForward()
+                        }
+                    } label: {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(navManager.canGoForward ? DS.textSecondary : DS.textMuted.opacity(0.3))
+                            .frame(width: 32, height: 32)
+                            .background(DS.bgElevated.opacity(0.6))
+                            .overlay(Circle().strokeBorder(DS.borderSubtle, lineWidth: 1))
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!navManager.canGoForward)
+                }
                 Spacer()
             }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 12)
+            
+            Divider().background(DS.borderSubtle.opacity(0.5))
         }
     }
 
     // MARK: - Header
     var appsHeader: some View {
-        HStack(spacing: 16) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(LinearGradient(colors: [Color(hex: "6A11CB"), Color(hex: "2575FC")],
-                                         startPoint: .topLeading, endPoint: .bottomTrailing))
-                    .frame(width: 44, height: 44)
-                Image(systemName: "square.stack.3d.up.fill")
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundColor(.white)
-            }
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Applications Manager")
-                    .font(.system(size: 20, weight: .bold, design: .rounded))
-                Text("Manage, uninstall, and clean up application leftovers")
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
-            }
-            Spacer()
-            if engine.isScanning {
+        VStack(spacing: 0) {
+            HStack(spacing: 16) {
                 HStack(spacing: 8) {
-                    ProgressView().scaleEffect(0.7)
-                    Text("Scanning…")
-                        .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+                    Button {
+                        if engine.isScanning {
+                            engine.cancelScan()
+                        }
+                        // Keep back behavior consistent with other tools:
+                        // first return to this tool's landing state, then navigate out.
+                        if engine.hasScanned {
+                            engine.hasScanned = false
+                            return
+                        }
+                        if !navManager.goBackToPreviousSection() {
+                            navManager.goBack()
+                        }
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(DS.textSecondary)
+                            .frame(width: 32, height: 32)
+                            .background(DS.bgElevated.opacity(0.6))
+                            .overlay(Circle().strokeBorder(DS.borderSubtle, lineWidth: 1))
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        // Forward action if needed
+                    } label: {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(DS.textMuted.opacity(0.3))
+                            .frame(width: 32, height: 32)
+                            .background(DS.bgElevated.opacity(0.6))
+                            .overlay(Circle().strokeBorder(DS.borderSubtle, lineWidth: 1))
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(true)
                 }
-            } else {
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text("\(engine.apps.count) apps")
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
-                        .foregroundColor(Color(hex: "6A11CB"))
-                    Text(ByteCountFormatter.string(fromByteCount: engine.totalSize, countStyle: .file) + " total")
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
+
+                HStack(spacing: 12) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(LinearGradient(colors: [Color(hex: "6A11CB"), Color(hex: "2575FC")],
+                                                 startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .frame(width: 36, height: 36)
+                        Image(systemName: "square.stack.3d.up.fill")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundColor(.white)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Applications Manager")
+                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .foregroundColor(DS.textPrimary)
+                        Text("\(engine.apps.count) total apps")
+                            .font(.system(size: 10))
+                            .foregroundColor(DS.textMuted)
+                    }
+                }
+
+                Spacer()
+                
+                if !engine.isScanning {
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text(ByteCountFormatter.string(fromByteCount: engine.totalSize, countStyle: .file))
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .foregroundColor(Color(hex: "6A11CB"))
+                        Text("Total potential space")
+                            .font(.system(size: 9))
+                            .foregroundColor(DS.textMuted)
+                    }
                 }
             }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 12)
+            
+            Divider().background(DS.borderSubtle.opacity(0.5))
         }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 16)
     }
 
     // MARK: - App List
@@ -524,12 +594,20 @@ struct ApplicationsManagerView: View {
                     .confirmationDialog("Clean All Scratch Data?", isPresented: $showBatchScratchConfirm, titleVisibility: .visible) {
                         Button("Delete All Temporary Data for \(app.name)", role: .destructive) {
                             var cleaned: Int64 = 0
+                            var failed = 0
                             for item in items {
-                                cleaned += item.size
-                                try? FileManager.default.removeItem(atPath: item.path)
+                                if engine.deleteScratchItem(path: item.path) {
+                                    cleaned += item.size
+                                } else {
+                                    failed += 1
+                                }
                             }
                             scratchRefreshId = UUID()
-                            resultMessage = "Cleaned \(ByteCountFormatter.string(fromByteCount: cleaned, countStyle: .file)) of scratch data from \(app.name)."
+                            if failed == 0 {
+                                resultMessage = "Cleaned \(ByteCountFormatter.string(fromByteCount: cleaned, countStyle: .file)) of scratch data from \(app.name)."
+                            } else {
+                                resultMessage = "Cleaned \(ByteCountFormatter.string(fromByteCount: cleaned, countStyle: .file)) from \(app.name), \(failed) item(s) could not be removed."
+                            }
                             showResult = true
                         }
                         Button("Cancel", role: .cancel) {}
@@ -560,15 +638,13 @@ struct ApplicationsManagerView: View {
                                 Button {
                                     let size = item.size
                                     let name = item.name
-                                    do {
-                                        try FileManager.default.removeItem(atPath: item.path)
+                                    if engine.deleteScratchItem(path: item.path) {
                                         scratchRefreshId = UUID()
-                                        resultMessage = "Deleted \(name) (\(ByteCountFormatter.string(fromByteCount: size, countStyle: .file)))"
-                                        showResult = true
-                                    } catch {
-                                        resultMessage = "Failed to delete \(name): \(error.localizedDescription)"
-                                        showResult = true
+                                        resultMessage = "Cleaned \(name) (\(ByteCountFormatter.string(fromByteCount: size, countStyle: .file)))"
+                                    } else {
+                                        resultMessage = "Failed to clean \(name). It may be protected or in use."
                                     }
+                                    showResult = true
                                 } label: {
                                     Image(systemName: "trash").font(.system(size: 13)).foregroundColor(.red.opacity(0.8))
                                 }.buttonStyle(.plain).help("Delete this item")
@@ -739,7 +815,9 @@ struct ApplicationsManagerView: View {
         let execPath = "\(path)/Contents/MacOS"
         guard let contents = try? FileManager.default.contentsOfDirectory(atPath: execPath), let exec = contents.first else { return "Unknown" }
         let p = Process(); p.executableURL = URL(fileURLWithPath: "/usr/bin/file"); p.arguments = ["\(execPath)/\(exec)"]
-        let pipe = Pipe(); p.standardOutput = pipe; try? p.run(); p.waitUntilExit()
+        let pipe = Pipe(); p.standardOutput = pipe
+        let s1 = DispatchSemaphore(value: 0); p.terminationHandler = { _ in s1.signal() }
+        try? p.run(); _ = s1.wait(timeout: .now() + 5.0); if p.isRunning { p.terminate() }
         let out = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
         if out.contains("arm64") && out.contains("x86_64") { return "Universal" }
         if out.contains("arm64") { return "Apple Silicon" }
@@ -749,7 +827,9 @@ struct ApplicationsManagerView: View {
     private func appCodeSigned(path: String) -> Bool {
         let p = Process(); p.executableURL = URL(fileURLWithPath: "/usr/bin/codesign"); p.arguments = ["-v", path]
         p.standardOutput = FileHandle.nullDevice; p.standardError = FileHandle.nullDevice
-        try? p.run(); p.waitUntilExit(); return p.terminationStatus == 0
+        let s2 = DispatchSemaphore(value: 0); p.terminationHandler = { _ in s2.signal() }
+        try? p.run(); _ = s2.wait(timeout: .now() + 5.0); if p.isRunning { p.terminate() }
+        return p.terminationStatus == 0
     }
     private func appLastOpened(path: String) -> String {
         guard let vals = try? URL(fileURLWithPath: path).resourceValues(forKeys: [.contentAccessDateKey]),
@@ -868,7 +948,7 @@ struct ApplicationsManagerView: View {
                         showResult = true
                     }
                     Button("Cancel", role: .cancel) {}
-                } message: { Text("This will permanently delete ALL caches, logs, preferences, and temporary files for this app.") }
+                } message: { Text("This will move ALL detected caches, logs, preferences, and temporary files for this app to Trash when possible.") }
 
                 // Uninstall button
                 Button {
@@ -1055,11 +1135,21 @@ class ApplicationsEngine: ObservableObject {
     @Published var apps: [InstalledApp] = []
     @Published var isScanning = false
     @Published var hasScanned = false
+    @Published var currentScanPath = ""
 
     var totalSize: Int64 { apps.reduce(0) { $0 + $1.size } }
 
     private let fm = FileManager.default
     private var home: String { fm.homeDirectoryForCurrentUser.path }
+
+    private func removeItemSafely(atPath path: String) throws {
+        let url = URL(fileURLWithPath: path)
+        do {
+            try fm.trashItem(at: url, resultingItemURL: nil)
+        } catch {
+            try fm.removeItem(at: url)
+        }
+    }
 
     func scanAll() {
         isScanning = true
@@ -1074,6 +1164,11 @@ class ApplicationsEngine: ObservableObject {
             // Auto-check for updates in background
             await checkAllForUpdates()
         }
+    }
+
+    func cancelScan() {
+        hasScanned = true
+        isScanning = false
     }
 
     // MARK: - Update Checker (iTunes Search API)
@@ -1160,7 +1255,7 @@ class ApplicationsEngine: ObservableObject {
         var cleaned: Int64 = 0
         for leftover in apps[ai].leftovers where leftover.isSelected {
             do {
-                try fm.removeItem(atPath: leftover.path)
+                try removeItemSafely(atPath: leftover.path)
                 cleaned += leftover.size
             } catch {}
         }
@@ -1184,7 +1279,7 @@ class ApplicationsEngine: ObservableObject {
 
         // Delete selected leftovers
         for leftover in app.leftovers where leftover.isSelected {
-            try? fm.removeItem(atPath: leftover.path)
+            try? removeItemSafely(atPath: leftover.path)
         }
 
         apps.remove(at: ai)
@@ -1239,8 +1334,13 @@ class ApplicationsEngine: ObservableObject {
         return items.sorted { $0.size > $1.size }
     }
 
-    func deleteScratchItem(path: String) {
-        try? fm.removeItem(atPath: path)
+    func deleteScratchItem(path: String) -> Bool {
+        do {
+            try removeItemSafely(atPath: path)
+            return true
+        } catch {
+            return false
+        }
     }
 
     // MARK: - Batch Clean All Leftovers
@@ -1249,7 +1349,7 @@ class ApplicationsEngine: ObservableObject {
         for ai in apps.indices {
             for leftover in apps[ai].leftovers where leftover.isSelected {
                 do {
-                    try fm.removeItem(atPath: leftover.path)
+                    try removeItemSafely(atPath: leftover.path)
                     totalCleaned += leftover.size
                 } catch {}
             }
@@ -1268,7 +1368,7 @@ class ApplicationsEngine: ObservableObject {
         // 1. Delete all detected leftovers (even if not selected)
         for leftover in app.leftovers {
             do {
-                try fm.removeItem(atPath: leftover.path)
+                try removeItemSafely(atPath: leftover.path)
                 cleaned += leftover.size
             } catch {}
         }
@@ -1277,7 +1377,7 @@ class ApplicationsEngine: ObservableObject {
         let scratch = scratchDiskItems(for: app)
         for item in scratch {
             do {
-                try fm.removeItem(atPath: item.path)
+                try removeItemSafely(atPath: item.path)
                 cleaned += item.size
             } catch {}
         }

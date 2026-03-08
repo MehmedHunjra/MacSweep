@@ -4,24 +4,35 @@ struct ContentView: View {
     @ObservedObject var scanEngine: ScanEngine
     @ObservedObject var cleanEngine: CleanEngine
     @ObservedObject var settings: AppSettings
-    
-    // Hosted Engines for background execution
-    @StateObject private var appsEngine = ApplicationsEngine()
-    @StateObject private var protectionEngine = ProtectionEngine()
-    @StateObject private var perfEngine = PerformanceEngine()
-    @StateObject private var dupEngine = DuplicateEngine()
-    @StateObject private var memoryEngine = MemoryEngine()
-    @StateObject private var spaceEngine = SpaceLensEngine()
-    @StateObject private var devEngine = DevCleanEngine()
+    @ObservedObject var updateEngine: AppUpdateEngine
 
-    @State private var selected: AppSection = .dashboard
+    // Hosted Engines
+    @StateObject private var appsEngine      = ApplicationsEngine()
+    @StateObject private var protectionEngine = ProtectionEngine()
+    @StateObject private var perfEngine      = PerformanceEngine()
+    @StateObject private var dupEngine       = DuplicateEngine()
+    @StateObject private var memoryEngine    = MemoryEngine()
+    @StateObject private var spaceEngine     = SpaceLensEngine()
+    @StateObject private var devEngine       = DevCleanEngine()
+
+    // Security Engines (hoisted so they persist across navigation)
+    @StateObject private var malwareEngine     = MalwareScanEngine()
+    @StateObject private var realtimeEngine    = RealtimeProtectionEngine()
+    @StateObject private var adwareEngine      = AdwareCleanEngine()
+    @StateObject private var ransomwareEngine  = RansomwareGuardEngine()
+    @StateObject private var networkEngine     = NetworkMonitorEngine()
+    @StateObject private var quarantineEngine  = QuarantineManager()
+    @StateObject private var integrityEngine   = IntegrityMonitorEngine()
+
+    // Navigation
+    @StateObject private var navManager = NavigationManager()
     @State private var hoverSection: AppSection?
 
     var body: some View {
         HStack(spacing: 0) {
-            // Custom Sidebar
+            // Icon-only sidebar (52px)
             SidebarView(
-                selected: $selected,
+                selected: $navManager.currentSection,
                 hoverSection: $hoverSection,
                 scanEngine: scanEngine,
                 settings: settings,
@@ -33,39 +44,28 @@ struct ContentView: View {
                 spaceEngine: spaceEngine,
                 devEngine: devEngine
             )
-                .frame(width: 240)
+            .frame(width: 200)
 
-            // Divider line
-            Rectangle()
-                .fill(Color.gray.opacity(0.2))
-                .frame(width: 1)
-
-            // Detail View with transition animation
+            // Detail view with slide+fade transition
             detailView
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .transition(.asymmetric(
-                    insertion: .opacity.combined(with: .move(edge: .trailing)),
-                    removal: .opacity
-                ))
-                .animation(.easeInOut(duration: 0.25), value: selected)
+                .animation(Motion.std, value: navManager.currentSection)
         }
-        .background(Color(NSColor.controlBackgroundColor))
+        .background(DS.bg)
         .onAppear {
-            if selected != settings.mainSection {
-                selected = settings.mainSection
+            if navManager.currentSection != settings.mainSection {
+                navManager.currentSection = settings.mainSection
             }
             scanEngine.refreshDiskInfo()
             scanEngine.refreshRunningApps()
         }
         .onChange(of: settings.mainSectionRaw) { _, newRaw in
             let target = AppSection(rawValue: newRaw) ?? .dashboard
-            if selected != target {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    selected = target
-                }
+            if navManager.currentSection != target {
+                withAnimation(Motion.std) { navManager.currentSection = target }
             }
         }
-        .onChange(of: selected) { _, newValue in
+        .onChange(of: navManager.currentSection) { _, newValue in
             if settings.mainSection != newValue {
                 settings.mainSection = newValue
             }
@@ -78,44 +78,89 @@ struct ContentView: View {
                 }
                 window.isReleasedWhenClosed = false
                 window.collectionBehavior.insert(.moveToActiveSpace)
+                AppDelegate.ensureMainWindowGeometry(window)
                 AppDelegate.mainWindow = window
             }
         )
     }
 
+    @State private var maintenanceStandaloneTab = 0
+    @State private var memoryStandaloneTab = 0
+
     @ViewBuilder
     var detailView: some View {
-        switch selected {
+        switch navManager.currentSection {
         case .dashboard:
-            DashboardView(scanEngine: scanEngine, selected: $selected)
+            DashboardView(scanEngine: scanEngine, settings: settings, selected: $navManager.currentSection)
+                .environmentObject(navManager)
         case .smartScan:
             SmartScanView(scanEngine: scanEngine, cleanEngine: cleanEngine, settings: settings)
+                .environmentObject(navManager)
         case .systemJunk:
             SystemJunkView(scanEngine: scanEngine, cleanEngine: cleanEngine)
+                .environmentObject(navManager)
         case .largeFiles:
             LargeFilesView(scanEngine: scanEngine, cleanEngine: cleanEngine)
+                .environmentObject(navManager)
         case .appLeftovers:
-            ApplicationsManagerView(engine: appsEngine)
+            AppLeftoversView(scanEngine: scanEngine, cleanEngine: cleanEngine)
+                .environmentObject(navManager)
         case .browser:
-            ProtectionManagerView(scanEngine: scanEngine, cleanEngine: cleanEngine, engine: protectionEngine)
+            BrowserCleanerView(scanEngine: scanEngine, cleanEngine: cleanEngine)
+                .environmentObject(navManager)
         case .maintenance:
-            PerformanceManagerView(engine: perfEngine, memoryEngine: memoryEngine)
+            MaintenanceView(selectedTab: $maintenanceStandaloneTab)
+                .onAppear { maintenanceStandaloneTab = 0 }
+                .environmentObject(navManager)
         case .privacy:
-            ProtectionManagerView(scanEngine: scanEngine, cleanEngine: cleanEngine, engine: protectionEngine)
+            PrivacyView(scanEngine: scanEngine, cleanEngine: cleanEngine)
+                .environmentObject(navManager)
         case .spaceLens:
             SpaceLensView(scanEngine: scanEngine, engine: spaceEngine)
+                .environmentObject(navManager)
         case .devCleaner:
             DevCleanerView(devEngine: devEngine)
+                .environmentObject(navManager)
         case .performance:
-            PerformanceManagerView(engine: perfEngine, memoryEngine: memoryEngine)
+            PerformanceManagerView(engine: perfEngine)
+                .environmentObject(navManager)
+        case .memoryOptimizer:
+            MemoryOptimizerView(engine: memoryEngine, selectedTab: $memoryStandaloneTab)
+                .onAppear { memoryStandaloneTab = 0 }
+                .environmentObject(navManager)
         case .applications:
             ApplicationsManagerView(engine: appsEngine)
+                .environmentObject(navManager)
         case .protection:
             ProtectionManagerView(scanEngine: scanEngine, cleanEngine: cleanEngine, engine: protectionEngine)
+                .environmentObject(navManager)
         case .duplicates:
             DuplicateFinderView(engine: dupEngine)
+                .environmentObject(navManager)
         case .settings:
-            SettingsView(scanEngine: scanEngine, settings: settings)
+            SettingsView(scanEngine: scanEngine, settings: settings, updater: updateEngine)
+                .environmentObject(navManager)
+        case .malwareScanner:
+            MalwareScannerView(engine: malwareEngine)
+                .environmentObject(navManager)
+        case .realtimeProtect:
+            RealtimeProtectionView(engine: realtimeEngine)
+                .environmentObject(navManager)
+        case .adwareCleaner:
+            AdwareCleanerView(engine: adwareEngine)
+                .environmentObject(navManager)
+        case .ransomwareGuard:
+            RansomwareGuardView(engine: ransomwareEngine)
+                .environmentObject(navManager)
+        case .networkMonitor:
+            NetworkMonitorView(engine: networkEngine)
+                .environmentObject(navManager)
+        case .quarantine:
+            QuarantineManagerView(quarantine: quarantineEngine)
+                .environmentObject(navManager)
+        case .integrityMonitor:
+            IntegrityMonitorView(engine: integrityEngine)
+                .environmentObject(navManager)
         }
     }
 }

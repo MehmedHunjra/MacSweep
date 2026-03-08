@@ -36,9 +36,12 @@ struct MenuBarView: View {
     @ObservedObject var scanEngine:  ScanEngine
     @ObservedObject var cleanEngine: CleanEngine
     @ObservedObject var settings:    AppSettings
+    @ObservedObject var updateEngine: AppUpdateEngine
     @State private var tab: MenuTab = .overview
+    @State private var tabDirection: CGFloat = 1
     @State private var appSearch = ""
     @State private var redrawTick = 0
+    @Namespace private var tabPickerNamespace
     @StateObject private var wifiLocationPermission = WiFiLocationPermissionManager()
     @State private var selectedOverviewDetail: OverviewDetail?
     @State private var selectedAppPID: pid_t?
@@ -51,7 +54,15 @@ struct MenuBarView: View {
     @State private var cachedExternalVolumeDetails: [(name: String, total: Int64, free: Int64)] = []
     @State private var cachedTrashSizeBytes: Int64 = 0
     @State private var cachedStartupItemCount: Int = 0
+    @StateObject private var menuBarQuarantine = QuarantineManager()
     private let lastKnownWiFiNameKey = "last_known_wifi_name"
+    private let actionToolSections: [AppSection] = [
+        .smartScan, .systemJunk, .largeFiles, .duplicates,
+        .privacy, .protection, .browser,
+        .malwareScanner, .realtimeProtect, .adwareCleaner, .ransomwareGuard, .networkMonitor, .quarantine, .integrityMonitor,
+        .performance, .maintenance, .memoryOptimizer, .applications,
+        .spaceLens, .devCleaner, .settings
+    ]
 
     enum MenuTab: String, CaseIterable {
         case overview = "Overview"
@@ -80,11 +91,7 @@ struct MenuBarView: View {
 
     // Dark premium gradient
     private let bgGradient = LinearGradient(
-        colors: [
-            Color(red: 0.10, green: 0.08, blue: 0.20),
-            Color(red: 0.08, green: 0.06, blue: 0.18),
-            Color(red: 0.06, green: 0.04, blue: 0.14)
-        ],
+        colors: [DS.bgPanel, DS.bg, DS.bg],
         startPoint: .top, endPoint: .bottom
     )
     private var displayCPUPercent: Int { scanEngine.cpuUsagePercent }
@@ -98,6 +105,23 @@ struct MenuBarView: View {
         }
         return scanEngine.runningApps.first
     }
+    private var tabInsertionEdge: Edge { tabDirection >= 0 ? .trailing : .leading }
+    private var tabRemovalEdge: Edge { tabDirection >= 0 ? .leading : .trailing }
+    private var tabContentTransition: AnyTransition {
+        .asymmetric(
+            insertion: .move(edge: tabInsertionEdge).combined(with: .opacity),
+            removal: .move(edge: tabRemovalEdge).combined(with: .opacity)
+        )
+    }
+
+    private func menuTabIndex(_ raw: String) -> Int {
+        switch raw {
+        case MenuTab.overview.rawValue: return 0
+        case MenuTab.apps.rawValue: return 1
+        case MenuTab.actions.rawValue: return 2
+        default: return 0
+        }
+    }
 
     var body: some View {
         HStack(spacing: 12) {
@@ -110,7 +134,7 @@ struct MenuBarView: View {
         .frame(width: 840)
         .background(bgGradient)
         .animation(.easeInOut(duration: 0.22), value: settings.menuBarTab)
-        .onReceive(Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()) { _ in
+        .onReceive(Timer.publish(every: 3.0, on: .main, in: .common).autoconnect()) { _ in
             // Keep menu popup values fresh while it is open.
             redrawTick &+= 1
             appendNetworkHistoryPoint()
@@ -127,14 +151,17 @@ struct MenuBarView: View {
             appendNetworkHistoryPoint()
             appendUtilizationHistoryPoint()
             refreshPopupCaches()
+            tab = MenuTab(rawValue: settings.menuBarTab) ?? .overview
             if selectedOverviewDetail == nil {
-                selectedOverviewDetail = .disk
+                selectedOverviewDetail = .cpu
             }
             syncSelectedAppSelection()
         }
-        .onChange(of: settings.menuBarTab) { _, newValue in
+        .onChange(of: settings.menuBarTab) { oldValue, newValue in
+            tabDirection = menuTabIndex(newValue) >= menuTabIndex(oldValue) ? 1 : -1
+            tab = MenuTab(rawValue: newValue) ?? .overview
             if newValue == "Overview", selectedOverviewDetail == nil {
-                selectedOverviewDetail = .disk
+                selectedOverviewDetail = .cpu
             }
             if newValue == "Apps" {
                 syncSelectedAppSelection()
@@ -153,7 +180,7 @@ struct MenuBarView: View {
         case "Actions":
             actionsDetailPanel
         default:
-            overviewDetailPanel(selectedOverviewDetail ?? .disk)
+            overviewDetailPanel(selectedOverviewDetail ?? .cpu)
         }
     }
 
@@ -166,14 +193,25 @@ struct MenuBarView: View {
             tabPicker
 
             // ── Content ────────────────────────
-            Group {
+            ZStack {
                 switch settings.menuBarTab {
-                case "Apps":    appsTab
-                case "Actions": actionsTab
-                default:        overviewTab
+                case "Apps":
+                    appsTab
+                        .transition(tabContentTransition)
+                        .zIndex(tab.rawValue == MenuTab.apps.rawValue ? 1 : 0)
+                case "Actions":
+                    actionsTab
+                        .transition(tabContentTransition)
+                        .zIndex(tab.rawValue == MenuTab.actions.rawValue ? 1 : 0)
+                default:
+                    overviewTab
+                        .transition(tabContentTransition)
+                        .zIndex(tab.rawValue == MenuTab.overview.rawValue ? 1 : 0)
                 }
             }
             .frame(minHeight: 260)
+            .clipped()
+            .animation(.spring(duration: 0.35, bounce: 0.14), value: settings.menuBarTab)
 
             // ── Footer ─────────────────────────
             footerBar
@@ -240,10 +278,10 @@ struct MenuBarView: View {
 
     private var healthColor: Color {
         switch healthStatus {
-        case "Excellent": return Color(hex: "00E5FF")
-        case "Good": return Color(hex: "38EF7D")
-        case "Fair": return .orange
-        default: return .red
+        case "Excellent": return DS.brandGreen
+        case "Good": return DS.success
+        case "Fair": return DS.warning
+        default: return DS.danger
         }
     }
 
@@ -252,25 +290,32 @@ struct MenuBarView: View {
         HStack(spacing: 0) {
             ForEach(MenuTab.allCases, id: \.self) { t in
                 Button {
-                    withAnimation(.easeInOut(duration: 0.15)) { 
+                    withAnimation(.spring(duration: 0.28, bounce: 0.12)) {
                         settings.menuBarTab = t.rawValue 
                     }
                 } label: {
-                    VStack(spacing: 3) {
-                        Image(systemName: t.icon)
-                            .font(.system(size: 11, weight: .medium))
-                        Text(t.rawValue)
-                            .font(.system(size: 10, weight: .medium))
-                    }
-                    .foregroundColor(settings.menuBarTab == t.rawValue ? Color(hex: "00E5FF") : .white.opacity(0.4))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(settings.menuBarTab == t.rawValue ? Color.white.opacity(0.06) : Color.clear)
-                    .contentShape(Rectangle())
-                    .overlay(alignment: .bottom) {
+                    ZStack(alignment: .bottom) {
                         if settings.menuBarTab == t.rawValue {
                             Rectangle()
-                                .fill(Color(hex: "00E5FF"))
+                                .fill(Color.white.opacity(0.06))
+                                .matchedGeometryEffect(id: "menubar-tab-bg", in: tabPickerNamespace)
+                        }
+
+                        VStack(spacing: 3) {
+                            Image(systemName: t.icon)
+                                .font(.system(size: 11, weight: .medium))
+                            Text(t.rawValue)
+                                .font(.system(size: 10, weight: .medium))
+                        }
+                        .foregroundColor(settings.menuBarTab == t.rawValue ? DS.brandGreen : .white.opacity(0.4))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .contentShape(Rectangle())
+
+                        if settings.menuBarTab == t.rawValue {
+                            Rectangle()
+                                .fill(DS.brandGreen)
                                 .frame(height: 2)
+                                .matchedGeometryEffect(id: "menubar-tab-underline", in: tabPickerNamespace)
                         }
                     }
                 }
@@ -291,22 +336,44 @@ struct MenuBarView: View {
     private var overviewTab: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 10) {
-                // Topbar quick tools
-                topUtilityRow
+                // Security status card
+                securityStatusCard
 
                 // 2x2 card grid — each card is clickable with a real action
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                    // CPU details popup
+                    DarkStatCard(
+                        icon: "cpu",
+                        title: "CPU",
+                        value: "Load: \(displayCPUPercent)%",
+                        valueColor: .white.opacity(0.6),
+                        action: "Top Apps",
+                        actionColor: DS.brandTeal,
+                        progress: displayCPUUsage,
+                        progressColor: displayCPUUsage > 0.8 ? .red : displayCPUUsage > 0.6 ? .orange : DS.brandTeal,
+                        isSelected: selectedOverviewDetail == .cpu,
+                        onAction: {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                settings.menuBarTab = "Apps"
+                            }
+                        }
+                    )
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        toggleOverviewDetail(.cpu)
+                    }
+
                     // Disk details popup
                     if let disk = scanEngine.diskInfo {
                         DarkStatCard(
                             icon: "internaldrive.fill",
                             title: "Macintosh HD",
                             value: "Available: \(disk.freeFormatted)",
-                            valueColor: Color(hex: "00E5FF"),
+                            valueColor: DS.brandGreen,
                             action: "Free Up",
-                            actionColor: Color(hex: "00E5FF"),
+                            actionColor: DS.brandGreen,
                             progress: disk.usedPercentage,
-                            progressColor: disk.usedPercentage > 0.85 ? .red : disk.usedPercentage > 0.7 ? .orange : Color(hex: "00E5FF"),
+                            progressColor: disk.usedPercentage > 0.85 ? .red : DS.brandGreen,
                             isSelected: selectedOverviewDetail == .disk,
                             onAction: {
                                 openMainApp(section: .smartScan, startSmartScan: true)
@@ -325,9 +392,9 @@ struct MenuBarView: View {
                         value: "Used: \(displayMemoryUsedCompact) (\(displayMemoryPercent)%)",
                         valueColor: .white.opacity(0.6),
                         action: "Optimize",
-                        actionColor: Color(hex: "FFD600"),
+                        actionColor: DS.warning,
                         progress: displayMemoryUsage,
-                        progressColor: displayMemoryUsage > 0.85 ? .red : displayMemoryUsage > 0.7 ? .orange : Color(hex: "38EF7D"),
+                        progressColor: displayMemoryUsage > 0.85 ? .red : displayMemoryUsage > 0.7 ? .orange : DS.success,
                         isSelected: selectedOverviewDetail == .memory,
                         onAction: {
                             openMainApp(section: .maintenance)
@@ -336,28 +403,6 @@ struct MenuBarView: View {
                     .contentShape(Rectangle())
                     .onTapGesture {
                         toggleOverviewDetail(.memory)
-                    }
-
-                    // CPU details popup
-                    DarkStatCard(
-                        icon: "cpu",
-                        title: "CPU",
-                        value: "Load: \(displayCPUPercent)%",
-                        valueColor: .white.opacity(0.6),
-                        action: "Top Apps",
-                        actionColor: Color(hex: "4776E6"),
-                        progress: displayCPUUsage,
-                        progressColor: displayCPUUsage > 0.8 ? .red : displayCPUUsage > 0.6 ? .orange : Color(hex: "4776E6"),
-                        isSelected: selectedOverviewDetail == .cpu,
-                        onAction: {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                settings.menuBarTab = "Apps"
-                            }
-                        }
-                    )
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        toggleOverviewDetail(.cpu)
                     }
 
                     // GPU details popup
@@ -369,11 +414,11 @@ struct MenuBarView: View {
                             : "GPU Memory",
                         valueColor: .white.opacity(0.6),
                         action: "Top Apps",
-                        actionColor: Color(hex: "BD10E0"),
+                        actionColor: Color(hex: "8B5CF6"),
                         progress: scanEngine.vramTotalMB > 0
                             ? Double(scanEngine.vramUsedMB) / Double(max(scanEngine.vramTotalMB, 1))
                             : scanEngine.memoryUsage,
-                        progressColor: Color(hex: "BD10E0"),
+                        progressColor: Color(hex: "8B5CF6"),
                         isSelected: selectedOverviewDetail == .gpu,
                         onAction: {
                             withAnimation(.easeInOut(duration: 0.2)) {
@@ -397,7 +442,7 @@ struct MenuBarView: View {
                 HStack(spacing: 8) {
                     Image(systemName: "square.stack.3d.up.fill")
                         .font(.system(size: 12))
-                        .foregroundColor(Color(hex: "00E5FF"))
+                        .foregroundColor(DS.brandGreen)
                     Text("\(scanEngine.runningAppCount) apps running")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundColor(.white)
@@ -405,7 +450,7 @@ struct MenuBarView: View {
                     Button("View All") { withAnimation { settings.menuBarTab = "Apps" } }
                         .buttonStyle(.plain)
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(Color(hex: "00E5FF"))
+                        .foregroundColor(DS.brandGreen)
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
@@ -416,7 +461,7 @@ struct MenuBarView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
                             Image(systemName: "sparkles")
-                                .foregroundColor(Color(hex: "38EF7D"))
+                                .foregroundColor(DS.success)
                                 .font(.system(size: 11))
                             Text("Cleanup History")
                                 .font(.system(size: 11, weight: .semibold))
@@ -429,7 +474,7 @@ struct MenuBarView: View {
 
                         Text("Total freed: \(ByteCountFormatter.string(fromByteCount: scanEngine.totalFreedBytes, countStyle: .file))")
                             .font(.system(size: 11, weight: .bold))
-                            .foregroundColor(Color(hex: "38EF7D"))
+                            .foregroundColor(DS.success)
 
                         ForEach(scanEngine.freedHistory.prefix(3)) { rec in
                             HStack {
@@ -440,69 +485,150 @@ struct MenuBarView: View {
                                 Spacer()
                                 Text(rec.sizeFormatted)
                                     .font(.system(size: 10, weight: .semibold))
-                                    .foregroundColor(Color(hex: "38EF7D"))
+                                    .foregroundColor(DS.success)
                             }
                         }
                     }
                     .padding(10)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(Color(hex: "38EF7D").opacity(0.07)))
+                    .background(RoundedRectangle(cornerRadius: 8).fill(DS.success.opacity(0.07)))
                 }
             }
             .padding(12)
         }
     }
 
+    // MARK: - Security Status Card
+    private var securityStatusCard: some View {
+        let quarantineCount = menuBarQuarantine.items.count
+        let isProtected = quarantineCount == 0
+        let statusText = isProtected ? "Protected" : "\(quarantineCount) item(s) quarantined"
+        let statusColor: Color = isProtected ? DS.success : DS.warning
+        let statusIcon = isProtected ? "checkmark.shield.fill" : "shield.slash.fill"
+
+        return HStack(spacing: 12) {
+            // Shield icon
+            ZStack {
+                Circle()
+                    .fill(statusColor.opacity(0.15))
+                    .frame(width: 38, height: 38)
+                Image(systemName: statusIcon)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundColor(statusColor)
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text("Antivirus Protection")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.white)
+                    Text(isProtected ? "Active" : "Review")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundColor(statusColor)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(statusColor.opacity(0.18)))
+                }
+                Text(statusText)
+                    .font(.system(size: 11))
+                    .foregroundColor(statusColor.opacity(0.85))
+            }
+
+            Spacer()
+
+            VStack(spacing: 5) {
+                Button {
+                    openMainApp(section: .malwareScanner)
+                } label: {
+                    Text("Scan Now")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Capsule().fill(statusColor.opacity(0.75)))
+                }
+                .buttonStyle(.plain)
+
+                if quarantineCount > 0 {
+                    Button {
+                        openMainApp(section: .quarantine)
+                    } label: {
+                        Text("View Quarantine")
+                            .font(.system(size: 10))
+                            .foregroundColor(DS.warning)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(
+                    LinearGradient(
+                        colors: [statusColor.opacity(0.08), Color.white.opacity(0.04)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(statusColor.opacity(0.25), lineWidth: 0.8)
+                )
+        )
+    }
+
     private var topUtilityRow: some View {
-        HStack(spacing: 8) {
-            VStack(alignment: .leading, spacing: 8) {
+        HStack(spacing: 6) {
+            VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {
                     Image(systemName: "trash.fill")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(Color(hex: "8B9DC3"))
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(DS.textMuted)
                     Text("Trash")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 10, weight: .semibold))
                         .foregroundColor(.white)
                 }
                 Text(ByteCountFormatter.string(fromByteCount: cachedTrashSizeBytes, countStyle: .file))
-                    .font(.system(size: 19, weight: .bold, design: .rounded))
-                    .foregroundColor(Color(hex: "FF5A74"))
+                    .font(.system(size: 17, weight: .bold, design: .rounded))
+                    .foregroundColor(DS.danger)
                 HStack {
                     Spacer()
                     Button("Release") {
                         releaseTrash()
                     }
                     .buttonStyle(.plain)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(Color(hex: "53C7FF"))
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(DS.brandTeal)
                 }
             }
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(10)
+            .frame(maxWidth: .infinity, minHeight: 88, alignment: .topLeading)
             .background(
-                RoundedRectangle(cornerRadius: 10)
+                RoundedRectangle(cornerRadius: 9)
                     .fill(Color.white.opacity(0.06))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 10)
+                        RoundedRectangle(cornerRadius: 9)
                             .stroke(Color.white.opacity(0.08), lineWidth: 0.8)
                     )
             )
 
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {
                     Image(systemName: "person.2.fill")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(Color(hex: "8B9DC3"))
-                    Text("Startup item management")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(DS.textMuted)
+                    Text("Startup Items")
+                        .font(.system(size: 10, weight: .semibold))
                         .foregroundColor(.white)
                         .lineLimit(1)
                 }
                 Text("\(cachedStartupItemCount) startup items detected")
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundColor(.white.opacity(0.75))
                     .lineLimit(1)
-                Text("Startup items dragging down boot time")
-                    .font(.system(size: 10))
+                Text("Can slow startup")
+                    .font(.system(size: 9))
                     .foregroundColor(.white.opacity(0.45))
                     .lineLimit(1)
                 HStack {
@@ -511,17 +637,17 @@ struct MenuBarView: View {
                         openMainApp(section: .performance)
                     }
                     .buttonStyle(.plain)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(Color(hex: "53C7FF"))
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(DS.brandTeal)
                 }
             }
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(10)
+            .frame(maxWidth: .infinity, minHeight: 88, alignment: .topLeading)
             .background(
-                RoundedRectangle(cornerRadius: 10)
+                RoundedRectangle(cornerRadius: 9)
                     .fill(Color.white.opacity(0.06))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 10)
+                        RoundedRectangle(cornerRadius: 9)
                             .stroke(Color.white.opacity(0.08), lineWidth: 0.8)
                     )
             )
@@ -534,7 +660,7 @@ struct MenuBarView: View {
         return HStack(spacing: 10) {
             Image(systemName: network.icon)
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(Color(hex: "6DFFB8"))
+                .foregroundColor(DS.brandGreen)
                 .frame(width: 20)
 
             VStack(alignment: .leading, spacing: 4) {
@@ -545,10 +671,10 @@ struct MenuBarView: View {
                 HStack(spacing: 12) {
                     Label(formatSpeed(scanEngine.networkUpBytes), systemImage: "arrow.up")
                         .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                        .foregroundColor(Color(hex: "6DFFB8"))
+                        .foregroundColor(DS.brandGreen)
                     Label(formatSpeed(scanEngine.networkDownBytes), systemImage: "arrow.down")
                         .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                        .foregroundColor(Color(hex: "53C7FF"))
+                        .foregroundColor(DS.brandTeal)
                 }
             }
 
@@ -559,7 +685,7 @@ struct MenuBarView: View {
             }
             .buttonStyle(.plain)
             .font(.system(size: 11, weight: .semibold))
-            .foregroundColor(Color(hex: "53C7FF"))
+            .foregroundColor(DS.brandTeal)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
@@ -568,7 +694,7 @@ struct MenuBarView: View {
                 .fill(
                     LinearGradient(
                         colors: selectedOverviewDetail == .network
-                            ? [Color(hex: "4A2B97").opacity(0.8), Color(hex: "2A205A").opacity(0.9)]
+                            ? [DS.brandGreen.opacity(0.08), DS.bgElevated]
                             : [Color.white.opacity(0.07), Color.white.opacity(0.04)],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
@@ -578,7 +704,7 @@ struct MenuBarView: View {
         .overlay(
             RoundedRectangle(cornerRadius: 10)
                 .stroke(
-                    selectedOverviewDetail == .network ? Color(hex: "53C7FF").opacity(0.9) : Color.white.opacity(0.08),
+                    selectedOverviewDetail == .network ? DS.brandTeal.opacity(0.9) : Color.white.opacity(0.08),
                     lineWidth: selectedOverviewDetail == .network ? 1.2 : 0.8
                 )
         )
@@ -595,7 +721,7 @@ struct MenuBarView: View {
                 HStack(spacing: 8) {
                     Image(systemName: "externaldrive.fill")
                         .font(.system(size: 12))
-                        .foregroundColor(Color(hex: "8B9DC3"))
+                        .foregroundColor(DS.textMuted)
                     VStack(alignment: .leading, spacing: 0) {
                         Text("External Drives")
                             .font(.system(size: 10, weight: .semibold))
@@ -616,7 +742,7 @@ struct MenuBarView: View {
                     } label: {
                         Image(systemName: "eject.fill")
                             .font(.system(size: 10))
-                            .foregroundColor(Color(hex: "00E5FF"))
+                            .foregroundColor(DS.brandGreen)
                     }
                     .buttonStyle(.plain)
                 }
@@ -626,14 +752,14 @@ struct MenuBarView: View {
                     RoundedRectangle(cornerRadius: 8)
                         .fill(
                             selectedOverviewDetail == .externalDrives
-                                ? Color(hex: "2A205A").opacity(0.9)
+                                ? DS.bgElevated.opacity(0.9)
                                 : Color.white.opacity(0.04)
                         )
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 8)
                         .stroke(
-                            selectedOverviewDetail == .externalDrives ? Color(hex: "53C7FF").opacity(0.9) : Color.clear,
+                            selectedOverviewDetail == .externalDrives ? DS.brandTeal.opacity(0.9) : Color.clear,
                             lineWidth: 1.2
                         )
                 )
@@ -694,7 +820,7 @@ struct MenuBarView: View {
                             }
                             .background(
                                 RoundedRectangle(cornerRadius: 8)
-                                    .fill(selectedAppPID == app.id ? Color(hex: "2A205A").opacity(0.7) : Color.clear)
+                                    .fill(selectedAppPID == app.id ? DS.bgElevated.opacity(0.7) : Color.clear)
                             )
                             .contentShape(Rectangle())
                             .onTapGesture {
@@ -723,7 +849,7 @@ struct MenuBarView: View {
                 } label: {
                     Label("Refresh", systemImage: "arrow.clockwise")
                         .font(.system(size: 10))
-                        .foregroundColor(Color(hex: "00E5FF"))
+                        .foregroundColor(DS.brandGreen)
                 }
                 .buttonStyle(.plain)
             }
@@ -736,83 +862,164 @@ struct MenuBarView: View {
     // MARK: - Actions Tab
     private var actionsTab: some View {
         ScrollView(showsIndicators: false) {
-            actionsButtonsStack
-                .padding(12)
+            VStack(alignment: .leading, spacing: 12) {
+                actionsToolsSection(columns: 3, showDescription: true)
+            }
+            .padding(12)
         }
     }
 
+    @ViewBuilder
+    private func actionsQuickSection(showDescription: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Quick Actions")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundColor(.white)
+
+            if showDescription {
+                Text("Run cleanup and optimization actions instantly from this panel.")
+                    .font(.system(size: 10))
+                    .foregroundColor(.white.opacity(0.6))
+            }
+
+            actionsButtonsStack
+        }
+        .padding(.horizontal, 2)
+        .padding(.top, 4)
+    }
+
     private var actionsButtonsStack: some View {
-        VStack(spacing: 6) {
-            DarkActionButton(
-                icon: "trash.fill",
-                title: "Empty Trash",
-                subtitle: "Remove items in Trash permanently",
-                color: .red
-            ) {
+        LazyVGrid(
+            columns: [GridItem(.flexible(), spacing: 6), GridItem(.flexible(), spacing: 6)],
+            spacing: 6
+        ) {
+            // ── Immediate actions ──────────────────────────────
+            QuickActionCard(icon: "trash.fill", title: "Empty Trash", color: .red) {
                 let task = Process()
                 task.launchPath = "/usr/bin/osascript"
                 task.arguments  = ["-e", "tell application \"Finder\" to empty trash"]
                 try? task.run()
             }
-
-            DarkActionButton(
-                icon: "wind",
-                title: "Free RAM (Purge)",
-                subtitle: "Release inactive memory to free up RAM",
-                color: Color(hex: "38EF7D")
-            ) {
+            QuickActionCard(icon: "wind", title: "Free RAM", color: DS.success) {
                 runPrivilegedPurge()
             }
-
-            DarkActionButton(
-                icon: "network.slash",
-                title: "Flush DNS Cache",
-                subtitle: "Clear DNS resolver cache",
-                color: Color(hex: "4776E6")
-            ) {
+            QuickActionCard(icon: "network.slash", title: "Flush DNS", color: DS.brandTeal) {
                 let task = Process()
                 task.launchPath = "/usr/bin/dscacheutil"
                 task.arguments  = ["-flushcache"]
                 try? task.run()
             }
-
-            DarkActionButton(
-                icon: "star.fill",
-                title: "Run Maintenance Scripts",
-                subtitle: "Run daily, weekly, monthly scripts",
-                color: Color(hex: "F5A623")
-            ) {
+            QuickActionCard(icon: "star.fill", title: "Maintenance Scripts", color: DS.warning) {
                 let task = Process()
                 task.launchPath = "/usr/sbin/periodic"
                 task.arguments  = ["daily", "weekly", "monthly"]
                 try? task.run()
             }
-
-            DarkActionButton(
-                icon: "sparkles.rectangle.stack",
-                title: "Quick Scan",
-                subtitle: "Open MacSweep and scan for junk files",
-                color: Color(hex: "00E5FF")
-            ) {
-                openMainApp(section: .smartScan, startSmartScan: true)
-            }
-
-            DarkActionButton(
-                icon: "arrow.clockwise",
-                title: "Refresh All Stats",
-                subtitle: "Update disk, RAM, CPU, and app stats",
-                color: .white.opacity(0.5)
-            ) {
+            QuickActionCard(icon: "arrow.clockwise", title: "Refresh Stats", color: Color(hex: "6B7280")) {
                 scanEngine.refreshDiskInfo()
                 scanEngine.refreshRunningApps()
             }
+
+            // ── Tool shortcuts ─────────────────────────────────
+            QuickActionCard(icon: "sparkles.rectangle.stack", title: "Quick Scan", color: DS.brandGreen) {
+                openMainApp(section: .smartScan, startSmartScan: true)
+            }
+            QuickActionCard(icon: "internaldrive.fill", title: "System Junk", color: DS.brandGreen) {
+                openMainApp(section: .systemJunk)
+            }
+            QuickActionCard(icon: "arrow.up.doc.fill", title: "Large Files", color: Color(hex: "CC44AA")) {
+                openMainApp(section: .largeFiles)
+            }
+            QuickActionCard(icon: "doc.on.doc.fill", title: "Duplicates", color: Color(hex: "9B4DFF")) {
+                openMainApp(section: .duplicates)
+            }
+            QuickActionCard(icon: "chart.pie.fill", title: "Space Lens", color: Color(hex: "00B4D8")) {
+                openMainApp(section: .spaceLens)
+            }
+            QuickActionCard(icon: "bolt.shield", title: "Startup Optimizer", color: DS.warning) {
+                openMainApp(section: .performance)
+            }
+            QuickActionCard(icon: "memorychip", title: "Memory Optimizer", color: Color(hex: "8B5CF6")) {
+                openMainApp(section: .memoryOptimizer)
+            }
+            QuickActionCard(icon: "square.grid.2x2.fill", title: "App Manager", color: Color(hex: "3A70E0")) {
+                openMainApp(section: .applications)
+            }
+            QuickActionCard(icon: "chevron.left.forwardslash.chevron.right", title: "Dev Cleaner", color: Color(hex: "3A6080")) {
+                openMainApp(section: .devCleaner)
+            }
+            QuickActionCard(icon: "shield.checkered", title: "Security Scan", color: DS.brandTeal) {
+                openMainApp(section: .malwareScanner)
+            }
+            QuickActionCard(icon: "exclamationmark.triangle.fill", title: "Adware Cleaner", color: Color(hex: "E07030")) {
+                openMainApp(section: .adwareCleaner)
+            }
+            QuickActionCard(icon: "flame.fill", title: "Ransomware Guard", color: Color(hex: "CC2020")) {
+                openMainApp(section: .ransomwareGuard)
+            }
+            QuickActionCard(icon: "network", title: "Network Monitor", color: Color(hex: "0090C0")) {
+                openMainApp(section: .networkMonitor)
+            }
+            QuickActionCard(icon: "safari", title: "Browser Privacy", color: Color(hex: "3B82F6")) {
+                openMainApp(section: .browser)
+            }
+            QuickActionCard(icon: "eye.slash.fill", title: "Privacy Check", color: Color(hex: "EC4899")) {
+                openMainApp(section: .privacy)
+            }
+            QuickActionCard(icon: "hand.raised.fill", title: "Privacy & Protection", color: Color(hex: "D459A0")) {
+                openMainApp(section: .protection)
+            }
+            QuickActionCard(icon: "lock.doc.fill", title: "Quarantine", color: Color(hex: "9B20C0")) {
+                openMainApp(section: .quarantine)
+            }
+            QuickActionCard(icon: "checkmark.shield.fill", title: "System Integrity", color: Color(hex: "F59E0B")) {
+                openMainApp(section: .integrityMonitor)
+            }
+            QuickActionCard(icon: "wrench.and.screwdriver.fill", title: "Maintenance", color: Color(hex: "8B5CF6")) {
+                openMainApp(section: .maintenance)
+            }
         }
+    }
+
+    @ViewBuilder
+    private func actionsToolsSection(columns: Int, showDescription: Bool = true) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("All Tools")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundColor(.white)
+
+            if showDescription {
+                Text("Open any MacSweep tool directly from top bar.")
+                    .font(.system(size: 10))
+                    .foregroundColor(.white.opacity(0.6))
+            }
+
+            LazyVGrid(
+                columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: columns),
+                spacing: 6
+            ) {
+                ForEach(actionToolSections, id: \.self) { section in
+                    ActionToolShortcutButton(
+                        section: section,
+                        accent: SectionTheme.theme(for: section).glow
+                    ) {
+                        openMainApp(section: section, startSmartScan: section == .smartScan)
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 2)
+        .padding(.top, 4)
     }
 
     // MARK: - Footer Bar
     private var footerBar: some View {
         HStack(spacing: 10) {
-            LogoView(size: 24)
+            Image("BrandIconSVG")
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 24, height: 24)
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
 
             Button {
                 openMainApp(section: settings.mainSection)
@@ -837,10 +1044,10 @@ struct MenuBarView: View {
                     Text("Buy Me a Coffee")
                         .font(.system(size: 10, weight: .semibold))
                 }
-                .foregroundColor(Color(hex: "FFD600"))
+                .foregroundColor(DS.warning)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
-                .background(RoundedRectangle(cornerRadius: 6).fill(Color(hex: "FFD600").opacity(0.12)))
+                .background(RoundedRectangle(cornerRadius: 6).fill(DS.warning.opacity(0.12)))
             }
             .buttonStyle(.plain)
 
@@ -927,14 +1134,14 @@ struct MenuBarView: View {
         }
         .background(
             LinearGradient(
-                colors: [Color(hex: "3B1772"), Color(hex: "200944"), Color(hex: "12052D")],
+                colors: [DS.bgElevated, DS.bgPanel, DS.bg],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
         )
         .overlay(
             RoundedRectangle(cornerRadius: 16)
-                .stroke(Color(hex: "7B5BFF").opacity(0.45), lineWidth: 1.0)
+                .stroke(DS.brandGreen.opacity(0.15), lineWidth: 1.0)
         )
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .shadow(color: .black.opacity(0.35), radius: 14, y: 8)
@@ -1008,7 +1215,7 @@ struct MenuBarView: View {
                                         HStack(spacing: 6) {
                                             ProgressView()
                                                 .controlSize(.small)
-                                                .tint(Color(hex: "53C7FF"))
+                                                .tint(DS.brandTeal)
                                             Text("Analyzing...")
                                         }
                                     } else {
@@ -1016,7 +1223,7 @@ struct MenuBarView: View {
                                     }
                                 }
                                 .font(.system(size: 12, weight: .semibold))
-                                .foregroundColor(Color(hex: "53C7FF"))
+                                .foregroundColor(DS.brandTeal)
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 6)
                                 .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.08)))
@@ -1075,7 +1282,7 @@ struct MenuBarView: View {
                         appIcon: app.icon,
                         appName: app.name,
                         valueText: app.memoryFormatted,
-                        accent: Color(hex: "53C7FF")
+                        accent: DS.brandTeal
                     )
                 }
             }
@@ -1091,7 +1298,7 @@ struct MenuBarView: View {
                 title: "Load",
                 value: "\(displayCPUPercent)%",
                 points: cpuUsageHistory,
-                color: displayCPUPercent > 80 ? .red : Color(hex: "53C7FF")
+                color: displayCPUPercent > 80 ? .red : DS.brandTeal
             )
             .frame(height: 170)
 
@@ -1117,7 +1324,7 @@ struct MenuBarView: View {
                         appIcon: app.icon,
                         appName: app.name,
                         valueText: app.cpuFormatted,
-                        accent: Color(hex: "FF9C42")
+                        accent: DS.warning
                     )
                 }
             }
@@ -1133,7 +1340,7 @@ struct MenuBarView: View {
                 title: scanEngine.gpuName,
                 value: "\(Int(gpuPercent * 100))%",
                 points: gpuUsageHistory,
-                color: Color(hex: "BD10E0")
+                color: Color(hex: "8B5CF6")
             )
             .frame(height: 170)
 
@@ -1154,7 +1361,7 @@ struct MenuBarView: View {
                     appIcon: app.icon,
                     appName: app.name,
                     valueText: appGPUText(app),
-                    accent: Color(hex: "BD10E0")
+                    accent: Color(hex: "8B5CF6")
                 )
             }
         }
@@ -1166,7 +1373,7 @@ struct MenuBarView: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Image(systemName: "wifi")
-                        .foregroundColor(Color(hex: "6DFFB8"))
+                        .foregroundColor(DS.brandGreen)
                     Text(network.name)
                         .font(.system(size: 20, weight: .bold))
                         .foregroundColor(.white)
@@ -1174,7 +1381,7 @@ struct MenuBarView: View {
                 }
                 Text("Upload \(formatSpeed(scanEngine.networkUpBytes))  •  Download \(formatSpeed(scanEngine.networkDownBytes))")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(Color(hex: "53C7FF"))
+                    .foregroundColor(DS.brandTeal)
             }
             .padding(12)
             .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.08)))
@@ -1184,13 +1391,13 @@ struct MenuBarView: View {
                     title: "Download",
                     value: formatSpeed(scanEngine.networkDownBytes),
                     points: networkDownloadHistory.map { min($0 / 3000, 1.0) },
-                    color: Color(hex: "53C7FF")
+                    color: DS.brandTeal
                 )
                 PopupLinePanel(
                     title: "Upload",
                     value: formatSpeed(scanEngine.networkUpBytes),
                     points: networkUploadHistory.map { min($0 / 3000, 1.0) },
-                    color: Color(hex: "FF7A7A")
+                    color: DS.danger
                 )
             }
             .frame(height: 130)
@@ -1217,7 +1424,7 @@ struct MenuBarView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
                             Image(systemName: "externaldrive.fill")
-                                .foregroundColor(Color(hex: "8B9DC3"))
+                                .foregroundColor(DS.textMuted)
                             Text(drive.name)
                                 .font(.system(size: 15, weight: .semibold))
                                 .foregroundColor(.white)
@@ -1234,7 +1441,7 @@ struct MenuBarView: View {
                                 RoundedRectangle(cornerRadius: 3)
                                     .fill(Color.white.opacity(0.12))
                                 RoundedRectangle(cornerRadius: 3)
-                                    .fill(Color(hex: "F8E71C"))
+                                    .fill(DS.brandGreen)
                                     .frame(width: geo.size.width * min(max(usedRatio, 0), 1))
                             }
                         }
@@ -1248,7 +1455,7 @@ struct MenuBarView: View {
                                 NSWorkspace.shared.open(URL(fileURLWithPath: "/Volumes/\(drive.name)"))
                             }
                             .buttonStyle(.plain)
-                            .foregroundColor(Color(hex: "53C7FF"))
+                            .foregroundColor(DS.brandTeal)
                             .font(.system(size: 12, weight: .bold))
                         }
                     }
@@ -1270,13 +1477,13 @@ struct MenuBarView: View {
                 name: "Applications",
                 value: appBytes,
                 valueText: ByteCountFormatter.string(fromByteCount: Int64(appBytes), countStyle: .memory),
-                color: Color(hex: "53C7FF")
+                color: DS.brandTeal
             ),
             .init(
                 name: "System",
                 value: systemBytes,
                 valueText: ByteCountFormatter.string(fromByteCount: Int64(systemBytes), countStyle: .memory),
-                color: Color(hex: "667EEA")
+                color: DS.brandGreen
             ),
             .init(
                 name: "Free",
@@ -1298,7 +1505,7 @@ struct MenuBarView: View {
                     name: "Used",
                     value: Double(disk.usedSpace),
                     valueText: disk.usedFormatted,
-                    color: Color(hex: "F8E71C")
+                    color: DS.brandGreen
                 ),
                 .init(
                     name: "Free",
@@ -1341,7 +1548,7 @@ struct MenuBarView: View {
 
         guard let disk = scanEngine.diskInfo else { return [] }
         return [
-            (name: "Used", value: disk.usedFormatted, color: Color(hex: "F8E71C")),
+            (name: "Used", value: disk.usedFormatted, color: DS.brandGreen),
             (name: "Free", value: disk.freeFormatted, color: .white.opacity(0.65))
         ]
     }
@@ -1410,7 +1617,7 @@ struct MenuBarView: View {
                         }
 
                         HStack(spacing: 8) {
-                            DetailCommandButton(title: "Open", color: Color(hex: "53C7FF")) {
+                            DetailCommandButton(title: "Open", color: DS.brandTeal) {
                                 openRunningApp(app)
                             }
                             DetailCommandButton(title: "Quit", color: .orange) {
@@ -1419,7 +1626,7 @@ struct MenuBarView: View {
                             DetailCommandButton(title: "Force Quit", color: .red) {
                                 forceQuitRunningApp(app)
                             }
-                            DetailCommandButton(title: "Restart", color: Color(hex: "BD10E0")) {
+                            DetailCommandButton(title: "Restart", color: Color(hex: "8B5CF6")) {
                                 restartRunningApp(app)
                             }
                         }
@@ -1468,16 +1675,16 @@ struct MenuBarView: View {
                                 Spacer()
                                 Text(app.cpuFormatted)
                                     .font(.system(size: 11, weight: .bold, design: .monospaced))
-                                    .foregroundColor(Color(hex: "FF9C42"))
+                                    .foregroundColor(DS.warning)
                                 Text(app.memoryFormatted)
                                     .font(.system(size: 11, weight: .bold, design: .monospaced))
-                                    .foregroundColor(Color(hex: "53C7FF"))
+                                    .foregroundColor(DS.brandTeal)
                             }
                             .padding(.horizontal, 10)
                             .padding(.vertical, 7)
                             .background(
                                 RoundedRectangle(cornerRadius: 8)
-                                    .fill(selectedAppPID == app.id ? Color(hex: "2A205A").opacity(0.85) : Color.white.opacity(0.06))
+                                    .fill(selectedAppPID == app.id ? DS.bgElevated.opacity(0.85) : Color.white.opacity(0.06))
                             )
                         }
                         .buttonStyle(.plain)
@@ -1488,14 +1695,14 @@ struct MenuBarView: View {
         }
         .background(
             LinearGradient(
-                colors: [Color(hex: "3B1772"), Color(hex: "200944"), Color(hex: "12052D")],
+                colors: [DS.bgElevated, DS.bgPanel, DS.bg],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
         )
         .overlay(
             RoundedRectangle(cornerRadius: 16)
-                .stroke(Color(hex: "7B5BFF").opacity(0.45), lineWidth: 1.0)
+                .stroke(DS.brandGreen.opacity(0.15), lineWidth: 1.0)
         )
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .shadow(color: .black.opacity(0.35), radius: 14, y: 8)
@@ -1520,27 +1727,21 @@ struct MenuBarView: View {
 
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("Quick Maintenance")
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundColor(.white)
-                    Text("Run cleanup and optimization actions instantly from this panel.")
-                        .font(.system(size: 12))
-                        .foregroundColor(.white.opacity(0.72))
-                    actionsButtonsStack
+                    actionsQuickSection(showDescription: true)
                 }
                 .padding(16)
             }
         }
         .background(
             LinearGradient(
-                colors: [Color(hex: "3B1772"), Color(hex: "200944"), Color(hex: "12052D")],
+                colors: [DS.bgElevated, DS.bgPanel, DS.bg],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
         )
         .overlay(
             RoundedRectangle(cornerRadius: 16)
-                .stroke(Color(hex: "7B5BFF").opacity(0.45), lineWidth: 1.0)
+                .stroke(DS.brandGreen.opacity(0.15), lineWidth: 1.0)
         )
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .shadow(color: .black.opacity(0.35), radius: 14, y: 8)
@@ -1585,15 +1786,50 @@ struct MenuBarView: View {
     }
 
     private func releaseTrash() {
-        let task = Process()
-        task.launchPath = "/usr/bin/osascript"
-        task.arguments = ["-e", "tell application \"Finder\" to empty trash"]
-        task.standardOutput = FileHandle.nullDevice
-        task.standardError = FileHandle.nullDevice
-        try? task.run()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            refreshPopupCaches()
+        DispatchQueue.global(qos: .userInitiated).async {
+            let task = Process()
+            task.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+            task.arguments = ["-e", "tell application \"Finder\" to empty trash"]
+            task.standardOutput = FileHandle.nullDevice
+            task.standardError = FileHandle.nullDevice
+
+            var didEmptyTrash = false
+            let tsema = DispatchSemaphore(value: 0)
+            task.terminationHandler = { _ in tsema.signal() }
+            do {
+                try task.run()
+                if tsema.wait(timeout: .now() + 30.0) == .timedOut { task.terminate() }
+                didEmptyTrash = task.terminationStatus == 0
+            } catch {
+                didEmptyTrash = false
+            }
+
+            if !didEmptyTrash {
+                _ = emptyUserTrashFallback()
+            }
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                refreshPopupCaches()
+            }
         }
+    }
+
+    private func emptyUserTrashFallback() -> Bool {
+        let fm = FileManager.default
+        let home = fm.homeDirectoryForCurrentUser.path
+        let trashPath = "\(home)/.Trash"
+        guard fm.fileExists(atPath: trashPath),
+              let entries = try? fm.contentsOfDirectory(atPath: trashPath) else { return false }
+
+        var success = true
+        for entry in entries {
+            do {
+                try fm.removeItem(atPath: "\(trashPath)/\(entry)")
+            } catch {
+                success = false
+            }
+        }
+        return success
     }
 
     private func getTrashSizeBytes() -> Int64 {
@@ -1729,12 +1965,21 @@ struct MenuBarView: View {
             rootView: ContentView(
                 scanEngine: scanEngine,
                 cleanEngine: cleanEngine,
-                settings: settings
+                settings: settings,
+                updateEngine: updateEngine
             )
-            .frame(minWidth: 1100, minHeight: 720)
+            .frame(
+                minWidth: AppDelegate.minimumMainWindowSize.width,
+                minHeight: AppDelegate.minimumMainWindowSize.height
+            )
         )
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1200, height: 760),
+            contentRect: NSRect(
+                x: 0,
+                y: 0,
+                width: AppDelegate.preferredMainWindowSize.width,
+                height: AppDelegate.preferredMainWindowSize.height
+            ),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
@@ -1743,6 +1988,7 @@ struct MenuBarView: View {
         window.contentViewController = host
         window.identifier = NSUserInterfaceItemIdentifier("MacSweepMainWindow")
         window.isReleasedWhenClosed = false
+        window.minSize = AppDelegate.minimumMainWindowSize
         window.collectionBehavior.insert(.moveToActiveSpace)
         AppDelegate.mainWindow = window
         window.makeKeyAndOrderFront(nil)
@@ -1819,8 +2065,11 @@ struct MenuBarView: View {
         task.standardOutput = pipe
         task.standardError = FileHandle.nullDevice
         do {
+            let _sema = DispatchSemaphore(value: 0)
+            task.terminationHandler = { _ in _sema.signal() }
             try task.run()
-            task.waitUntilExit()
+            _ = _sema.wait(timeout: .now() + 5.0)
+            if task.isRunning { task.terminate() }
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
             if let output = String(data: data, encoding: .utf8) {
                 let lower = output.lowercased()
@@ -1849,8 +2098,11 @@ struct MenuBarView: View {
         task.standardOutput = pipe
         task.standardError = FileHandle.nullDevice
         do {
+            let _sema = DispatchSemaphore(value: 0)
+            task.terminationHandler = { _ in _sema.signal() }
             try task.run()
-            task.waitUntilExit()
+            _ = _sema.wait(timeout: .now() + 5.0)
+            if task.isRunning { task.terminate() }
         } catch {
             return nil
         }
@@ -1875,8 +2127,11 @@ struct MenuBarView: View {
         task.standardOutput = pipe
         task.standardError = FileHandle.nullDevice
         do {
+            let _sema = DispatchSemaphore(value: 0)
+            task.terminationHandler = { _ in _sema.signal() }
             try task.run()
-            task.waitUntilExit()
+            _ = _sema.wait(timeout: .now() + 5.0)
+            if task.isRunning { task.terminate() }
         } catch {
             return nil
         }
@@ -1933,8 +2188,11 @@ struct MenuBarView: View {
         task.standardOutput = pipe
         task.standardError = FileHandle.nullDevice
         do {
+            let _sema = DispatchSemaphore(value: 0)
+            task.terminationHandler = { _ in _sema.signal() }
             try task.run()
-            task.waitUntilExit()
+            _ = _sema.wait(timeout: .now() + 5.0)
+            if task.isRunning { task.terminate() }
         } catch {
             return nil
         }
@@ -1954,8 +2212,11 @@ struct MenuBarView: View {
         task.standardOutput = pipe
         task.standardError = FileHandle.nullDevice
         do {
+            let _sema = DispatchSemaphore(value: 0)
+            task.terminationHandler = { _ in _sema.signal() }
             try task.run()
-            task.waitUntilExit()
+            _ = _sema.wait(timeout: .now() + 5.0)
+            if task.isRunning { task.terminate() }
         } catch {
             return nil
         }
@@ -2007,8 +2268,11 @@ struct MenuBarView: View {
         task.standardOutput = pipe
         task.standardError = FileHandle.nullDevice
         do {
+            let _sema = DispatchSemaphore(value: 0)
+            task.terminationHandler = { _ in _sema.signal() }
             try task.run()
-            task.waitUntilExit()
+            _ = _sema.wait(timeout: .now() + 5.0)
+            if task.isRunning { task.terminate() }
         } catch {
             return nil
         }
@@ -2041,8 +2305,11 @@ struct MenuBarView: View {
         task.standardOutput = pipe
         task.standardError = FileHandle.nullDevice
         do {
+            let _sema = DispatchSemaphore(value: 0)
+            task.terminationHandler = { _ in _sema.signal() }
             try task.run()
-            task.waitUntilExit()
+            _ = _sema.wait(timeout: .now() + 5.0)
+            if task.isRunning { task.terminate() }
         } catch {
             return nil
         }
@@ -2078,8 +2345,11 @@ struct MenuBarView: View {
         task.standardOutput = pipe
         task.standardError = FileHandle.nullDevice
         do {
+            let _sema = DispatchSemaphore(value: 0)
+            task.terminationHandler = { _ in _sema.signal() }
             try task.run()
-            task.waitUntilExit()
+            _ = _sema.wait(timeout: .now() + 5.0)
+            if task.isRunning { task.terminate() }
         } catch {
             return nil
         }
@@ -2139,7 +2409,7 @@ struct DarkStatCard: View {
             HStack(spacing: 6) {
                 Image(systemName: icon)
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(Color(hex: "8B9DC3"))
+                    .foregroundColor(DS.textMuted)
                 Text(title)
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundColor(.white)
@@ -2182,19 +2452,26 @@ struct DarkStatCard: View {
             RoundedRectangle(cornerRadius: 10)
                 .fill(
                     isSelected
-                        ? Color(hex: "2A205A").opacity(0.9)
+                        ? DS.bgElevated.opacity(0.9)
                         : (isHovered ? Color.white.opacity(0.10) : Color.white.opacity(0.06))
                 )
         )
         .overlay(
             RoundedRectangle(cornerRadius: 10)
                 .stroke(
-                    isSelected ? Color(hex: "53C7FF").opacity(0.9) : Color.white.opacity(0.06),
+                    isSelected ? DS.brandTeal.opacity(0.9) : Color.white.opacity(0.06),
                     lineWidth: isSelected ? 1.2 : 0.5
                 )
         )
+        .shadow(
+            color: (isHovered || isSelected) ? progressColor.opacity(0.18) : .clear,
+            radius: isSelected ? 10 : 8,
+            y: 3
+        )
+        .scaleEffect(isHovered ? 1.012 : 1.0)
         .onHover { isHovered = $0 }
-        .animation(.easeInOut(duration: 0.15), value: isHovered)
+        .animation(.spring(duration: 0.24, bounce: 0.16), value: isHovered)
+        .animation(.spring(duration: 0.24, bounce: 0.14), value: isSelected)
     }
 }
 
@@ -2227,7 +2504,7 @@ struct DarkRunningAppRow: View {
                         .lineLimit(1)
                     if app.isActive {
                         Circle()
-                            .fill(Color(hex: "38EF7D"))
+                            .fill(DS.success)
                             .frame(width: 5, height: 5)
                     }
                 }
@@ -2307,7 +2584,7 @@ struct DarkActionButton: View {
                     RoundedRectangle(cornerRadius: 8)
                         .fill(
                             isDone
-                            ? AnyShapeStyle(LinearGradient(colors: [Color(hex: "38EF7D"), Color(hex: "38EF7D").opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                            ? AnyShapeStyle(LinearGradient(colors: [DS.success, DS.success.opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing))
                             : AnyShapeStyle(LinearGradient(colors: [color, color.opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing))
                         )
                         .frame(width: 32, height: 32)
@@ -2322,7 +2599,7 @@ struct DarkActionButton: View {
                         .foregroundColor(.white)
                     Text(isDone ? "Done!" : subtitle)
                         .font(.system(size: 10))
-                        .foregroundColor(isDone ? Color(hex: "38EF7D") : .white.opacity(0.4))
+                        .foregroundColor(isDone ? DS.success : .white.opacity(0.4))
                 }
                 Spacer()
                 Image(systemName: "chevron.right")
@@ -2335,9 +2612,115 @@ struct DarkActionButton: View {
                 RoundedRectangle(cornerRadius: 10)
                     .fill(isHovered ? Color.white.opacity(0.08) : Color.white.opacity(0.04))
             )
+            .scaleEffect(isHovered ? 1.01 : 1.0)
+            .shadow(color: color.opacity(isHovered ? 0.22 : 0), radius: 10, y: 4)
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
+        .animation(.spring(duration: 0.24, bounce: 0.16), value: isHovered)
+    }
+}
+
+// MARK: - Quick Action Card (2-column compact grid)
+struct QuickActionCard: View {
+    let icon: String
+    let title: String
+    let color: Color
+    let action: () -> Void
+    @State private var isHovered = false
+    @State private var isDone    = false
+
+    var body: some View {
+        Button {
+            action()
+            withAnimation { isDone = true }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                withAnimation { isDone = false }
+            }
+        } label: {
+            VStack(alignment: .leading, spacing: 8) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill((isDone ? DS.success : color).opacity(0.18))
+                        .frame(width: 30, height: 30)
+                    Image(systemName: isDone ? "checkmark" : icon)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(isDone ? DS.success : color)
+                }
+                Text(isDone ? "Done!" : title)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(isDone ? DS.success : .white)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(isHovered ? Color.white.opacity(0.08) : Color.white.opacity(0.04))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(isHovered ? color.opacity(0.3) : Color.clear, lineWidth: 1)
+                    )
+            )
+            .scaleEffect(isHovered ? 1.02 : 1.0)
+            .shadow(color: color.opacity(isHovered ? 0.2 : 0), radius: 8, y: 3)
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+        .animation(.spring(duration: 0.22, bounce: 0.14), value: isHovered)
+    }
+}
+
+struct ActionToolShortcutButton: View {
+    let section: AppSection
+    let accent: Color
+    let action: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(accent.opacity(0.18))
+                            .frame(width: 22, height: 22)
+                        Image(systemName: section.icon)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(accent)
+                    }
+                    Spacer(minLength: 0)
+                    Image(systemName: "arrow.up.right")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundColor(.white.opacity(0.28))
+                }
+
+                Text(section.rawValue)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.9))
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, minHeight: 58, alignment: .topLeading)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(isHovered ? DS.bgElevated.opacity(0.95) : Color.white.opacity(0.05))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(accent.opacity(isHovered ? 0.38 : 0.16), lineWidth: 0.8)
+                    )
+            )
+            .scaleEffect(isHovered ? 1.012 : 1.0)
+            .shadow(color: accent.opacity(isHovered ? 0.22 : 0), radius: 10, y: 4)
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+        .animation(.spring(duration: 0.24, bounce: 0.16), value: isHovered)
     }
 }
 
@@ -2656,7 +3039,7 @@ struct ActionInfoCard: View {
                     Spacer()
                     Text(value)
                         .font(.system(size: 13, weight: .bold))
-                        .foregroundColor(Color(hex: "53C7FF"))
+                        .foregroundColor(DS.brandTeal)
                 }
                 Text(subtitle)
                     .font(.system(size: 12))

@@ -24,13 +24,29 @@
 
 ## Screenshots
 
-| Dashboard | Smart Scan | Security |
-| --------- | ---------- | -------- |
-| ![Dashboard](screenshots/dashboard.png) | ![Smart Scan](screenshots/smart-scan.png) | ![Security](screenshots/security.png) |
+### Main App
 
-| Menu Bar | Space Lens | Dev Cleaner |
-| -------- | ---------- | ----------- |
-| ![Menu Bar](screenshots/menubar.png) | ![Space Lens](screenshots/space-lens.png) | ![Dev Cleaner](screenshots/dev-cleaner.png) |
+| Dashboard | Smart Scan | Smart Scan Results |
+| --------- | ---------- | ------------------ |
+| ![Dashboard](screenshots/dashboard.png) | ![Smart Scan](screenshots/smart-scan.png) | ![Smart Scan Results](screenshots/smart-scan-results.png) |
+
+| Malware Scanner | Space Lens Map | App Manager |
+| --------------- | -------------- | ----------- |
+| ![Malware Scanner](screenshots/malware-scanner.png) | ![Space Lens](screenshots/space-lens-map.png) | ![App Manager](screenshots/app-manager.png) |
+
+| Dev Cleaner | Dev Cleaner Scanning | Applications |
+| ----------- | -------------------- | ------------ |
+| ![Dev Cleaner](screenshots/dev-cleaner.png) | ![Dev Cleaner Scan](screenshots/dev-cleaner-scan.png) | ![Applications](screenshots/applications.png) |
+
+| Settings General | Settings About | Space Lens |
+| ---------------- | -------------- | ---------- |
+| ![Settings](screenshots/settings.png) | ![About](screenshots/settings-about.png) | ![Space Lens](screenshots/space-lens.png) |
+
+### Menu Bar
+
+| Overview | Quick Actions + All Tools | Running Apps |
+| -------- | ------------------------- | ------------ |
+| ![Menu Bar Overview](screenshots/menubar-overview.png) | ![Menu Bar Actions](screenshots/menubar-actions.png) | ![Menu Bar Apps](screenshots/menubar-apps.png) |
 
 ---
 
@@ -90,7 +106,7 @@
 - **Privacy Cleaner** — erase recent document lists, clipboard history, browser traces
 - **Privacy & Protection** — scan and clear browser saved passwords, autofill, download history
 
-### Menu Bar
+### Menu Bar App
 
 - Always-on menu bar icon with live CPU, RAM, disk, and network stats
 - **Quick Actions panel** — 24 instant actions (Empty Trash, Free RAM, Flush DNS, and more)

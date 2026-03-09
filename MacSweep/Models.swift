@@ -790,11 +790,16 @@ final class NotificationManager {
              subtitle: "MacSweep")
     }
 
-    func notifyIntegrityAlert(itemCount: Int) {
+    func notifyIntegrityAlert(description: String) {
         send(.integrityAlert,
              title: "🔒 Integrity Alert",
-             body: "\(itemCount) high-risk item\(itemCount == 1 ? "" : "s") detected in system monitoring.",
+             body: description,
              subtitle: "MacSweep Security")
+    }
+
+    func playSound(_ name: String) {
+        guard settings?.notifySoundEnabled ?? true else { return }
+        NSSound(named: name)?.play()
     }
 
     func notifyUpdateAvailable(version: String) {
@@ -893,6 +898,7 @@ final class AppUpdateEngine: ObservableObject {
                 isUpdateAvailable = true
                 statusMessage = "Update available: v\(latestVersion ?? current)"
                 NotificationManager.shared.notifyUpdateAvailable(version: latestVersion ?? current)
+                NotificationManager.shared.playSound("Glass")
             } else {
                 isUpdateAvailable = false
                 statusMessage = "You are up to date"

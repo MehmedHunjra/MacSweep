@@ -666,6 +666,9 @@ class ScanEngine: ObservableObject {
         let totalJunk = scanItems.reduce(Int64(0)) { $0 + $1.size }
         let junkFormatted = ByteCountFormatter.string(fromByteCount: totalJunk, countStyle: .file)
         NotificationManager.shared.notifyScanComplete(junkFound: junkFormatted)
+        
+        // Play completion sound
+        NotificationManager.shared.playSound("Glass")
     }
 
     // MARK: - Space Lens
@@ -718,6 +721,7 @@ class ScanEngine: ObservableObject {
 
         storageCategories.sort { $0.size > $1.size }
         isAnalyzingSpace = false
+        NotificationManager.shared.playSound("Glass")
     }
 
     // MARK: - Helpers

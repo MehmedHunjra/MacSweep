@@ -541,6 +541,7 @@ class DuplicateEngine: ObservableObject {
                 self.currentScanPath = "Scan complete."
                 self.isScanning = false
                 self.scanTask = nil
+                NotificationManager.shared.playSound("Glass")
             }
         }
     }

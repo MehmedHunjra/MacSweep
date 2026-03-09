@@ -434,6 +434,7 @@ class MemoryEngine: ObservableObject {
             self.isScanning = false
             self.hasScanned = true
             self.scanTask = nil
+            NotificationManager.shared.playSound("Glass")
             self.startMonitoring()
         }
     }
@@ -584,6 +585,7 @@ class MemoryEngine: ObservableObject {
             await MainActor.run {
                 self.isFreeingMemory = false
                 self.updateMemoryStats()
+                NotificationManager.shared.playSound("Glass")
             }
         }
     }

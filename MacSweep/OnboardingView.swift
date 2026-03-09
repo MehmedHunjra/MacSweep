@@ -182,14 +182,21 @@ struct OnboardingView: View {
                     .opacity(animateIn ? 1 : 0)
                     .animation(Motion.std.delay(0.3), value: animateIn)
 
-                // Feature highlights
-                VStack(spacing: 8) {
-                    featureRow(icon: "xmark.bin.fill",        title: "Deep Clean",           desc: "Remove system junk, caches, and logs",          color: DS.danger)
-                    featureRow(icon: "chart.pie.fill",        title: "Space Lens",           desc: "Visualize what's taking up disk space",          color: SectionTheme.theme(for: .spaceLens).glow)
-                    featureRow(icon: "shield.lefthalf.filled",title: "Privacy Protection",   desc: "Clear browser data and digital footprints",      color: DS.brandTeal)
-                    featureRow(icon: "bolt.fill",             title: "Performance",          desc: "Speed up your Mac with maintenance tools",       color: DS.warning)
-                    featureRow(icon: "doc.on.doc.fill",       title: "Duplicate Finder",     desc: "Find and remove duplicate files",                color: SectionTheme.theme(for: .duplicates).glow)
-                    featureRow(icon: "memorychip",       title: "Memory Optimizer",     desc: "Free up RAM and monitor processes",              color: SectionTheme.theme(for: .performance).glow)
+                // Feature highlights — 2-column grid showing all tools
+                let featureColumns = [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)]
+                LazyVGrid(columns: featureColumns, spacing: 8) {
+                    featureRow(icon: "xmark.bin.fill",             title: "Deep Clean",          desc: "System junk, caches & logs",             color: DS.danger)
+                    featureRow(icon: "chart.pie.fill",             title: "Space Lens",          desc: "Visualize disk usage visually",           color: SectionTheme.theme(for: .spaceLens).glow)
+                    featureRow(icon: "shield.lefthalf.filled",     title: "Privacy",             desc: "Clear browser & footprints",             color: DS.brandTeal)
+                    featureRow(icon: "bolt.fill",                  title: "Performance",         desc: "Startup optimizer & maintenance",         color: DS.warning)
+                    featureRow(icon: "doc.on.doc.fill",            title: "Duplicate Finder",    desc: "Find & remove duplicate files",           color: SectionTheme.theme(for: .duplicates).glow)
+                    featureRow(icon: "memorychip",                 title: "Memory Optimizer",    desc: "Free RAM, monitor processes",             color: SectionTheme.theme(for: .performance).glow)
+                    featureRow(icon: "square.stack.3d.up.fill",    title: "App Manager",         desc: "Uninstall apps & clean leftovers",        color: Color(hex: "6A11CB"))
+                    featureRow(icon: "magnifyingglass.circle.fill",title: "Smart Scan",          desc: "One-click full system scan",              color: DS.brandGreen)
+                    featureRow(icon: "hammer.fill",                title: "Dev Cleaner",         desc: "Xcode, npm & IDE junk removal",           color: Color(hex: "3A6080"))
+                    featureRow(icon: "arrow.up.doc.fill",          title: "Large Files",         desc: "Find & delete big space hogs",           color: Color(hex: "CC44AA"))
+                    featureRow(icon: "ant.fill",                   title: "Malware Scanner",     desc: "Detect & remove threats",                 color: DS.danger)
+                    featureRow(icon: "network",                    title: "Network Monitor",     desc: "Monitor connections & activity",          color: Color(hex: "2575FC"))
                 }
                 .padding(.horizontal, 40)
                 .padding(.top, 8)
@@ -204,30 +211,30 @@ struct OnboardingView: View {
     }
 
     private func featureRow(icon: String, title: String, desc: String, color: Color) -> some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             ZStack {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(color.opacity(0.18))
-                    .frame(width: 34, height: 34)
+                    .frame(width: 30, height: 30)
                 Image(systemName: icon)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(color)
             }
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 1) {
                 Text(title)
-                    .font(MSFont.headline)
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(DS.textPrimary)
+                    .lineLimit(1)
                 Text(desc)
-                    .font(MSFont.caption)
+                    .font(.system(size: 10))
                     .foregroundColor(DS.textSecondary)
+                    .lineLimit(1)
             }
-            Spacer()
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 13))
-                .foregroundColor(color.opacity(0.6))
+            Spacer(minLength: 0)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 9)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity)
         .background(DS.bgPanel)
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(DS.borderSubtle, lineWidth: 1))

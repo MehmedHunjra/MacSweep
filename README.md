@@ -239,6 +239,7 @@ MacSweep was built in **2026** using **vibe coding** — writing software by des
 | **Claude Code** (Anthropic) | Primary architecture, SwiftUI views, all engines, bug fixes, CI/CD |
 | **OpenAI Codex** | Code suggestions, logic patterns, algorithm optimization |
 | **Google Gemini** | Research, API references, problem solving |
+| **Google Antigravity** | Agent-first IDE — agentic task orchestration, multi-agent code workflows |
 
 > This project proves that anyone — with the right AI tools and determination — can build a professional, fully functional native Mac application from scratch in 2026.
 
@@ -252,15 +253,15 @@ MacSweep was built in **2026** using **vibe coding** — writing software by des
 | **Claude Code** — Anthropic | AI Pair Programmer — architecture, SwiftUI, engines, CI |
 | **OpenAI Codex** | AI Code Assistant — logic, algorithms |
 | **Google Gemini** | AI Research Assistant |
-| **besttech.pk** | Software House — Made with love in 2026 |
+| **Google Antigravity** — Google | Agent-First AI IDE — agentic code orchestration, multi-agent workflows |
 
 ---
 
-## Made by besttech.pk
+## About besttech.pk
 
-**MacSweep** is a product of **[besttech.pk](https://besttech.pk)** — a software house and digital agency building apps, websites, and digital products.
+**MacSweep** is developed by **[besttech.pk](https://besttech.pk)** — a software studio specializing in native app development, web platforms, and digital product design.
 
-besttech.pk is a place where developers, designers, and entrepreneurs come together to build software, websites, and digital marketing solutions. If you have an idea — we can help you build it.
+We build production-grade software across macOS, iOS, and the web. If you have a product idea, [get in touch](https://besttech.pk).
 
 ---
 
@@ -295,4 +296,4 @@ MacSweep performs real system operations (file deletion, DNS flush, memory purge
 
 ---
 
-Made with love by [besttech.pk](https://besttech.pk) — Built in 2026 using AI vibe coding
+Built in 2026 by [besttech.pk](https://besttech.pk) using AI-assisted development

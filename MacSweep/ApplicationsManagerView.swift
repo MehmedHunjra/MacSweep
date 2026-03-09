@@ -36,6 +36,7 @@ struct ApplicationsManagerView: View {
     @State private var showClearAllConfirm = false
     @State private var showResult = false
     @State private var resultMessage = ""
+    @State private var showFDAAlert = false
     @State private var searchText = ""
     @State private var activeFilter: AppFilter = .all
     @State private var activeSort: AppSort = .name
@@ -137,9 +138,17 @@ struct ApplicationsManagerView: View {
             }
         }
         .alert("Action Complete", isPresented: $showResult) {
-            Button("OK") { engine.scanAll() }
+            Button("OK") { }
         } message: {
             Text(resultMessage)
+        }
+        .alert("Full Disk Access Required", isPresented: $showFDAAlert) {
+            Button("Open System Settings") {
+                NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")!)
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("MacSweep needs Full Disk Access to clean app files.\n\nGo to System Settings → Privacy & Security → Full Disk Access and enable MacSweep.")
         }
     }
 
@@ -877,8 +886,12 @@ struct ApplicationsManagerView: View {
                 .confirmationDialog("Clean All App Leftovers?", isPresented: $showBatchCleanConfirm, titleVisibility: .visible) {
                     Button("Clean Selected Leftovers from \(appsWithLeftovers) Apps", role: .destructive) {
                         let cleaned = engine.batchCleanAllLeftovers()
-                        resultMessage = "Batch cleaned \(ByteCountFormatter.string(fromByteCount: cleaned, countStyle: .file)) from \(appsWithLeftovers) apps."
-                        showResult = true
+                        if cleaned == 0 {
+                            showFDAAlert = true
+                        } else {
+                            resultMessage = "Cleaned \(ByteCountFormatter.string(fromByteCount: cleaned, countStyle: .file)) from \(appsWithLeftovers) apps."
+                            showResult = true
+                        }
                     }
                     Button("Cancel", role: .cancel) {}
                 } message: {
@@ -922,8 +935,12 @@ struct ApplicationsManagerView: View {
                 .confirmationDialog("Reset \(app.name)?", isPresented: $showResetConfirm, titleVisibility: .visible) {
                     Button("Reset (Delete Leftovers)", role: .destructive) {
                         let cleaned = engine.resetApp(appId: app.id)
-                        resultMessage = "Cleaned \(ByteCountFormatter.string(fromByteCount: cleaned, countStyle: .file)) of data from \(app.name)."
-                        showResult = true
+                        if cleaned == 0 {
+                            showFDAAlert = true
+                        } else {
+                            resultMessage = "Cleaned \(ByteCountFormatter.string(fromByteCount: cleaned, countStyle: .file)) from \(app.name)."
+                            showResult = true
+                        }
                     }
                     Button("Cancel", role: .cancel) {}
                 }
@@ -944,8 +961,12 @@ struct ApplicationsManagerView: View {
                 .confirmationDialog("Clear All App Data for \(app.name)?", isPresented: $showClearAllConfirm, titleVisibility: .visible) {
                     Button("Deep Clean (Delete Leftovers + Scratch)", role: .destructive) {
                         let cleaned = engine.clearAllAppData(appId: app.id)
-                        resultMessage = "Deep cleaned \(ByteCountFormatter.string(fromByteCount: cleaned, countStyle: .file)) from \(app.name)."
-                        showResult = true
+                        if cleaned == 0 {
+                            showFDAAlert = true
+                        } else {
+                            resultMessage = "Deep cleaned \(ByteCountFormatter.string(fromByteCount: cleaned, countStyle: .file)) from \(app.name)."
+                            showResult = true
+                        }
                     }
                     Button("Cancel", role: .cancel) {}
                 } message: { Text("This will move ALL detected caches, logs, preferences, and temporary files for this app to Trash when possible.") }

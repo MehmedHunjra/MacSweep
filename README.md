@@ -13,10 +13,16 @@
 
 ---
 
-[![Download MacSweep v3.3](https://img.shields.io/badge/⬇%20Download%20MacSweep%20v3.3-Free%20for%20macOS-169677?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/MehmedHunjra/MacSweep/releases/tag/v3.3)
-[![Support on Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/K3K21VE53X)
+### Download MacSweep v3.3 — Free
+
+| File | Size | Action |
+|------|------|--------|
+| **MacSweep-3.3.dmg** — Disk Image Installer | 4.46 MB | [**⬇ Download .DMG**](https://github.com/MehmedHunjra/MacSweep/releases/download/v3.3/MacSweep-3.3.dmg) |
+| **MacSweep-3.3.dmg.zip** — Compressed (faster download) | 4.43 MB | [**⬇ Download .ZIP**](https://github.com/MehmedHunjra/MacSweep/releases/download/v3.3/MacSweep-3.3.dmg.zip) |
 
 > **macOS 13 Ventura or later · Apple Silicon (M1/M2/M3/M4) & Intel · Free forever · No subscription required**
+
+[![Support MacSweep on Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/K3K21VE53X)
 
 ---
 

@@ -11,15 +11,19 @@ PROJECT = "MacSweep"
 BUNDLE  = "com.mehmed.MacSweep"
 SWIFT_FILES = [
     "MacSweepApp.swift", "ContentView.swift", "Models.swift",
-    "ScanEngine.swift", "CleanEngine.swift", "SidebarView.swift",
+    "ScanEngine.swift", "CleanEngine.swift", "SecurityEngine.swift",
+    "NavigationManager.swift", "SidebarView.swift",
     "DashboardView.swift", "SmartScanView.swift", "DuplicateFinderView.swift",
     "MemoryOptimizerView.swift", "OnboardingView.swift", "LegalView.swift",
     "LargeFilesView.swift", "AppLeftoversView.swift", "BrowserCleanerView.swift",
     "CleanResultSheet.swift", "MenuBarView.swift", "SystemJunkView.swift",
     "MaintenanceView.swift", "PrivacyView.swift", "SpaceLensView.swift",
     "PerformanceManagerView.swift", "ApplicationsManagerView.swift",
-    "ProtectionManagerView.swift", "SettingsView.swift",
-    "DevCleanerView.swift",
+    "ProtectionManagerView.swift", "SettingsView.swift", "DevCleanerView.swift",
+    "MalwareScannerView.swift", "RealtimeProtectionView.swift",
+    "AdwareCleanerView.swift", "RansomwareGuardView.swift",
+    "NetworkMonitorView.swift", "QuarantineManagerView.swift",
+    "IntegrityMonitorView.swift",
 ]
 
 def uid(): return uuid.uuid4().hex[:24].upper()

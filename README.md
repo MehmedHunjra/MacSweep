@@ -1,20 +1,20 @@
-# MacSweep Free Mac Cleaner — Open Source Mac Optimizer & Security Tool | Best Free CleanMyMac Alternative
+# MacSweep Free Mac Cleaner — Best Free CleanMyMac Alternative | Open Source Mac Optimizer & Security
 
 > **MacSweep Free Mac Cleaner** — The best free, open-source Mac cleaner for macOS. Clean junk files, remove malware, optimize memory, and protect your privacy. The #1 free alternative to CleanMyMac X, CCleaner for Mac, and DaisyDisk. No subscription. No tracking. 100% open source.
 
-[![Build Status](https://github.com/MehmedHunjra/MacSweep/actions/workflows/build.yml/badge.svg)](https://github.com/MehmedHunjra/MacSweep/actions)
+[![Build Status](https://github.com/MehmedHunjra/MacSweep-Free-Mac-Cleaner/actions/workflows/build.yml/badge.svg)](https://github.com/MehmedHunjra/MacSweep-Free-Mac-Cleaner/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![macOS 13+](https://img.shields.io/badge/macOS-13%2B%20Ventura-blue.svg)](#system-requirements)
 [![Swift 5.9](https://img.shields.io/badge/Swift-5.9-orange.svg)](#system-requirements)
-[![Version 3.3](https://img.shields.io/badge/version-3.3-brightgreen.svg)](https://github.com/MehmedHunjra/MacSweep/releases)
+[![Version 3.3](https://img.shields.io/badge/version-3.3-brightgreen.svg)](https://github.com/MehmedHunjra/MacSweep-Free-Mac-Cleaner/releases)
 [![Open Source](https://img.shields.io/badge/Open%20Source-100%25-brightgreen.svg)](LICENSE)
 [![No Subscription](https://img.shields.io/badge/Subscription-None-success.svg)](#download--install)
 [![Made by besttech.pk](https://img.shields.io/badge/Made%20by-besttech.pk-teal.svg)](https://besttech.pk)
 
 ---
 
-[![Download MacSweep v3.3 — DMG](https://img.shields.io/badge/Download%20v3.3-.DMG-169677?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/MehmedHunjra/MacSweep/releases/download/v3.3/MacSweep-3.3.dmg)
-[![Download MacSweep v3.3 — ZIP (faster)](https://img.shields.io/badge/Download%20v3.3-.DMG.ZIP%20%E2%80%94%20faster-0e7a60?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/MehmedHunjra/MacSweep/releases/download/v3.3/MacSweep-3.3.dmg.zip)
+[![Download MacSweep v3.3 — DMG](https://img.shields.io/badge/Download%20v3.3-.DMG-169677?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/MehmedHunjra/MacSweep-Free-Mac-Cleaner/releases/download/v3.3/MacSweep-3.3.dmg)
+[![Download MacSweep v3.3 — ZIP (faster)](https://img.shields.io/badge/Download%20v3.3-.DMG.ZIP%20%E2%80%94%20faster-0e7a60?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/MehmedHunjra/MacSweep-Free-Mac-Cleaner/releases/download/v3.3/MacSweep-3.3.dmg.zip)
 [![Support MacSweep on Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/K3K21VE53X)
 
 > **macOS 13 Ventura or later · Apple Silicon (M1/M2/M3/M4) & Intel · Free forever · No subscription required**
@@ -142,7 +142,7 @@ Looking for a **free CleanMyMac alternative**? Here's how MacSweep compares to t
 
 ## Download & Install — MacSweep Free Mac Cleaner
 
-> **Slow download?** GitHub CDN can occasionally be slow. Try the **ZIP option** (faster) or use **Homebrew** for the most reliable install. All releases: [github.com/MehmedHunjra/MacSweep/releases](https://github.com/MehmedHunjra/MacSweep/releases)
+> **Slow download?** GitHub CDN can occasionally be slow. Try the **ZIP option** (faster) or use **Homebrew** for the most reliable install. All releases: [github.com/MehmedHunjra/MacSweep-Free-Mac-Cleaner/releases](https://github.com/MehmedHunjra/MacSweep-Free-Mac-Cleaner/releases)
 
 ### Method 1 — Homebrew (Recommended — Fastest & No Gatekeeper Warnings)
 
@@ -155,7 +155,7 @@ Homebrew automatically handles installation with no Gatekeeper warnings and no T
 ### Method 2 — One-Line Terminal Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/MehmedHunjra/MacSweep/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/MehmedHunjra/MacSweep-Free-Mac-Cleaner/main/install.sh | bash
 ```
 
 Downloads the DMG, removes quarantine, installs to `/Applications`, and opens MacSweep automatically.
@@ -168,12 +168,12 @@ Downloads the DMG, removes quarantine, installs to `/Applications`, and opens Ma
 4. Open **System Settings → Privacy & Security**
 5. Scroll down and click **Open Anyway** next to MacSweep
 
-> **If download is slow:** GitHub CDN speeds vary by region. Try at a different time, use Homebrew, or use the GitHub CLI: `gh release download v3.3 --repo MehmedHunjra/MacSweep`
+> **If download is slow:** GitHub CDN speeds vary by region. Try at a different time, use Homebrew, or use the GitHub CLI: `gh release download v3.3 --repo MehmedHunjra/MacSweep-Free-Mac-Cleaner`
 
 ### Method 4 — GitHub CLI (Fast, No Browser Needed)
 
 ```bash
-gh release download v3.3 --repo MehmedHunjra/MacSweep --pattern "*.dmg"
+gh release download v3.3 --repo MehmedHunjra/MacSweep-Free-Mac-Cleaner --pattern "*.dmg"
 ```
 
 Requires [GitHub CLI](https://cli.github.com). Often faster than browser download.
@@ -181,7 +181,7 @@ Requires [GitHub CLI](https://cli.github.com). Often faster than browser downloa
 ### Method 5 — Build from Source
 
 ```bash
-git clone https://github.com/MehmedHunjra/MacSweep.git
+git clone https://github.com/MehmedHunjra/MacSweep-Free-Mac-Cleaner.git
 cd MacSweep
 bash build-dmg.sh
 ```
@@ -189,7 +189,7 @@ bash build-dmg.sh
 ### Build in Xcode
 
 ```bash
-git clone https://github.com/MehmedHunjra/MacSweep.git
+git clone https://github.com/MehmedHunjra/MacSweep-Free-Mac-Cleaner.git
 open MacSweep.xcodeproj
 ```
 

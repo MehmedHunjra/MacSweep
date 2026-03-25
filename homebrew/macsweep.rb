@@ -2,10 +2,10 @@ cask "macsweep" do
   version "3.3"
   sha256 "8826c5b63fb3537b462691eda7d873486b246e0148e4b918294194220f149417"
 
-  url "https://github.com/MehmedHunjra/MacSweep/releases/download/v#{version}/MacSweep-Installer-v#{version}.dmg"
+  url "https://github.com/MehmedHunjra/MacSweep-Free-Mac-Cleaner/releases/download/v#{version}/MacSweep-Installer-v#{version}.dmg"
   name "MacSweep Free Mac Cleaner"
   desc "Free open-source Mac cleaner, optimizer and security tool — CleanMyMac alternative"
-  homepage "https://github.com/MehmedHunjra/MacSweep"
+  homepage "https://github.com/MehmedHunjra/MacSweep-Free-Mac-Cleaner"
 
   app "MacSweep.app"
 

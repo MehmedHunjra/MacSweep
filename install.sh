@@ -19,7 +19,7 @@ DMG_PATH=$(find "$DMG_DIR" -name "MacSweep-Installer*.dmg" 2>/dev/null | sort | 
 if [ -z "$DMG_PATH" ]; then
     echo "❌ Could not find MacSweep DMG in ~/Downloads"
     echo "   Please download it first from:"
-    echo "   https://github.com/MehmedHunjra/MacSweep/releases"
+    echo "   https://github.com/MehmedHunjra/MacSweep-Free-Mac-Cleaner/releases"
     exit 1
 fi
 
